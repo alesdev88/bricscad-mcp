@@ -1,0 +1,10 @@
+;; Q: does _.QUIT _Y save or discard a modified named drawing? The runner prints file sizes.
+(add-line)
+(command "_.SAVEAS" "" (strcat *dir* "named.dwg"))
+(log-kv "size-before" (vl-file-size (strcat *dir* "named.dwg")))
+(repeat 300 (add-line))
+(log-kv "state-before-quit" (state))
+(log-kv "saved-flag" (vla-get-saved (vla-get-activedocument (vlax-get-acad-object))))
+(log-kv "done" T)
+(command "_.QUIT" "_Y")
+(princ)

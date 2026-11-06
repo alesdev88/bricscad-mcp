@@ -52,6 +52,14 @@ BricsCAD stays open. In the probe, this hung until the process was terminated. T
 last real drawing, make a blank one first with `(vla-add docs)`, then close the real one.
 LISP moves to the new `Drawing2.dwg` and can draw there.
 
+### Quitting
+
+`(command "_.QUIT" "_Y")` **discards** changes and exits with no dialog. A modified named drawing
+kept its size and got no `.bak`. This is the opposite of `_.CLOSE`, where `_Y` saves.
+
+`(vla-get-saved doc)` returns `:VLAX-FALSE` once a document has changed, so it can be used to count
+unsaved documents before quitting.
+
 ### Saving
 
 - `(command "_.SAVEAS" "" path)` saves with no dialog. `""` accepts the default file version, 2018.
