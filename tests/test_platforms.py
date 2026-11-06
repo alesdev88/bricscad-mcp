@@ -47,17 +47,18 @@ def test_a_missing_install_folder_finds_nothing(tmp_path):
 
 def test_launch_commands():
     s = Path("/q/my boot.lsp")
-    assert MacOS().launch_command(Installation("26", Path("/Applications/BricsCAD V26.app")), s) == [
-        "open", "-n", "-a", "/Applications/BricsCAD V26.app", "--args", "-b", str(s),
+    app = Path("/Applications/BricsCAD V26.app")
+    assert MacOS().launch_command(Installation("26", app), s) == [
+        "open", "-n", "-a", str(app), "--args", "-b", str(s),
     ]
     assert Windows().launch_command(Installation("26", Path("b.exe")), s) == ["b.exe", "/B", str(s)]
     assert Linux().launch_command(Installation("26", Path("b.sh")), s) == ["b.sh", "-b", str(s)]
 
 
 def test_macos_launch_accepts_a_binary_inside_the_bundle_from_the_override():
-    binary = Path("/x/custom")
-    assert MacOS().launch_command(Installation("custom", binary), Path("/q/b.lsp")) == [
-        "/x/custom", "-b", "/q/b.lsp",
+    binary, script = Path("/x/custom"), Path("/q/b.lsp")
+    assert MacOS().launch_command(Installation("custom", binary), script) == [
+        str(binary), "-b", str(script),
     ]
 
 

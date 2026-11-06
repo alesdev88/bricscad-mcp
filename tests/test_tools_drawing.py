@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 from bricscad_mcp.bridge import Bridge
@@ -98,6 +100,7 @@ async def test_open_can_be_read_write(started, fake, dwg):
     assert fake.requests[-1].endswith(" nil)")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows file names cannot contain a quote")
 async def test_open_escapes_the_path(started, fake, tmp_path):
     path = tmp_path / 'we"ird č.dwg'
     path.write_bytes(b"AC1032")
