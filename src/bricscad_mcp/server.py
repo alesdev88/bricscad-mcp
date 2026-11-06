@@ -1,5 +1,8 @@
 """The MCP server. Tool modules register themselves on `mcp`."""
 
+import os
+import signal
+
 from mcp.server.mcpserver import MCPServer
 
 from .platforms import get_platform
@@ -28,7 +31,20 @@ def set_session(value: Session | None) -> None:
     _session = value
 
 
+def handle_termination(signum: int, frame: object) -> None:
+    """Exit cleanly, so the listener is told to stop rather than waiting to notice."""
+    if _session is not None:
+        _session.close()
+    _exit_now()
+
+
+def _exit_now() -> None:
+    # A normal exit would wait forever on the thread blocked reading stdin.
+    os._exit(0)
+
+
 def main() -> None:
+    signal.signal(signal.SIGTERM, handle_termination)
     mcp.run("stdio")
 
 

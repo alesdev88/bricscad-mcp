@@ -11,20 +11,26 @@ from . import DEFAULT_LIMIT, READ_ONLY, in_thread, page_args
 Page = dict[str, Any]
 
 
-def list_layers(bridge: Bridge, limit: int = DEFAULT_LIMIT, offset: int = 0) -> Page:
-    return bridge.send(call("mcp:list-layers", *page_args(limit, offset)))
+def list_layers(bridge: Bridge, limit: int = DEFAULT_LIMIT, offset: int = 0, timeout: float = 30.0) -> Page:
+    return bridge.send(call("mcp:list-layers", *page_args(limit, offset)), timeout)
 
 
-def list_blocks(bridge: Bridge, include_anonymous: bool = False, limit: int = DEFAULT_LIMIT, offset: int = 0) -> Page:
-    return bridge.send(call("mcp:list-blocks", include_anonymous, *page_args(limit, offset)))
+def list_blocks(
+    bridge: Bridge,
+    include_anonymous: bool = False,
+    limit: int = DEFAULT_LIMIT,
+    offset: int = 0,
+    timeout: float = 30.0,
+) -> Page:
+    return bridge.send(call("mcp:list-blocks", include_anonymous, *page_args(limit, offset)), timeout)
 
 
-def list_xrefs(bridge: Bridge, limit: int = DEFAULT_LIMIT, offset: int = 0) -> Page:
-    return bridge.send(call("mcp:list-xrefs", *page_args(limit, offset)))
+def list_xrefs(bridge: Bridge, limit: int = DEFAULT_LIMIT, offset: int = 0, timeout: float = 30.0) -> Page:
+    return bridge.send(call("mcp:list-xrefs", *page_args(limit, offset)), timeout)
 
 
-def list_layouts(bridge: Bridge, limit: int = DEFAULT_LIMIT, offset: int = 0) -> Page:
-    return bridge.send(call("mcp:list-layouts", *page_args(limit, offset)))
+def list_layouts(bridge: Bridge, limit: int = DEFAULT_LIMIT, offset: int = 0, timeout: float = 30.0) -> Page:
+    return bridge.send(call("mcp:list-layouts", *page_args(limit, offset)), timeout)
 
 
 def query_entities(
@@ -84,27 +90,29 @@ async def _run(function, *args) -> Any:
 
 
 @mcp.tool(annotations=READ_ONLY)
-async def bricscad_list_layers(limit: int = DEFAULT_LIMIT, offset: int = 0) -> Page:
+async def bricscad_list_layers(limit: int = DEFAULT_LIMIT, offset: int = 0, timeout: float = 30.0) -> Page:
     """List layers with their on, frozen and locked state, color, linetype and entity count. Up to 2000 per call."""
-    return await _run(list_layers, limit, offset)
+    return await _run(list_layers, limit, offset, timeout)
 
 
 @mcp.tool(annotations=READ_ONLY)
-async def bricscad_list_blocks(include_anonymous: bool = False, limit: int = DEFAULT_LIMIT, offset: int = 0) -> Page:
+async def bricscad_list_blocks(
+    include_anonymous: bool = False, limit: int = DEFAULT_LIMIT, offset: int = 0, timeout: float = 30.0
+) -> Page:
     """List block definitions with insert counts, including inserts nested in other blocks. Up to 2000 per call."""
-    return await _run(list_blocks, include_anonymous, limit, offset)
+    return await _run(list_blocks, include_anonymous, limit, offset, timeout)
 
 
 @mcp.tool(annotations=READ_ONLY)
-async def bricscad_list_xrefs(limit: int = DEFAULT_LIMIT, offset: int = 0) -> Page:
+async def bricscad_list_xrefs(limit: int = DEFAULT_LIMIT, offset: int = 0, timeout: float = 30.0) -> Page:
     """List external references with their stored path and whether the file was found. Up to 2000 per call."""
-    return await _run(list_xrefs, limit, offset)
+    return await _run(list_xrefs, limit, offset, timeout)
 
 
 @mcp.tool(annotations=READ_ONLY)
-async def bricscad_list_layouts(limit: int = DEFAULT_LIMIT, offset: int = 0) -> Page:
+async def bricscad_list_layouts(limit: int = DEFAULT_LIMIT, offset: int = 0, timeout: float = 30.0) -> Page:
     """List Model and the paper space layouts with their entity counts. Up to 2000 per call."""
-    return await _run(list_layouts, limit, offset)
+    return await _run(list_layouts, limit, offset, timeout)
 
 
 @mcp.tool(annotations=READ_ONLY)

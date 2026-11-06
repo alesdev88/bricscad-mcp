@@ -131,6 +131,19 @@ order mark, so do not rely on it.
 | `(layoutlist)` | Works, and excludes Model |
 | `(vla-get-version ...)` | Does not exist |
 
+## Found later, by the real test set
+
+- Opening a drawing whose xref file is missing shows no dialog, and the audit reports it as missing.
+- A relative xref path such as `./x.dwg` beside the drawing is found by `findfile`. Paths like
+  `../x.dwg` have not been tested.
+- A `.dxf` opens with `vla-open`, read-only, with no dialog.
+- Opening a file that is already open shows no dialog.
+- `_.QUIT _Y` answers for one document only. A second modified document blocks at its own prompt, so
+  close the others with `vla-close` first. A modified read-only document discards without a prompt.
+- Two copies of the same version: the second starts, but its `-b` script does not run.
+- `vla-attachexternalreference` does not exist. `_.-XREF _A` attaches an xref, and `vla-put-path` changes
+  its stored path.
+
 ## Open points
 
 - `FILEDIA` read `0` at the start of every `-b` run. Whether that is the user's stored value or

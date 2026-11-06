@@ -1,7 +1,9 @@
 """The installed command, over a real stdio MCP connection. No BricsCAD needed."""
 
 import shutil
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -30,3 +32,13 @@ async def test_status_works_before_start_over_stdio():
     async with Client(StdioServerParameters(command=server_command())) as client:
         result = await client.call_tool("bricscad_status", {})
     assert result.structured_content["running"] is False
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX signals")
+async def test_the_command_exits_cleanly_on_a_termination_signal():
+    process = subprocess.Popen(
+        [server_command()], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+    )
+    time.sleep(2)
+    process.terminate()
+    assert process.wait(timeout=10) == 0

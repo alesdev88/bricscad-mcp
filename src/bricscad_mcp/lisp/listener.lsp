@@ -1,7 +1,10 @@
 ;; Runs requests from the queue folder, one at a time. See bridge.py for the protocol.
 (vl-load-com)
 
-(setq *mcp-quiet-seconds* 120.0)
+;; About two minutes at two polls a second. The server reports in every 30 seconds.
+(setq *mcp-quiet-polls* 240)
+(setq *mcp-unchanged-polls* 0)
+(setq *mcp-last-alive* nil)
 (setq *mcp-pending-error* nil)
 
 (defun mcp:path (name) (strcat *mcp-dir* name))
@@ -50,26 +53,18 @@
   )
 )
 
-;; ---- Time ----
+;; ---- Server health ----
 
-;; vl-file-systime gives (year month weekday day hour minute second ms).
-(defun mcp:systime-seconds (time / y m d a yy mm)
-  (setq y (nth 0 time) m (nth 1 time) d (nth 3 time)
-        a (/ (- 14 m) 12)
-        yy (- (+ y 4800) a)
-        mm (- (+ m (* 12 a)) 3))
-  (+ (* 86400.0 (+ d (/ (+ (* 153 mm) 2) 5) (* 365 yy) (/ yy 4) (- (/ yy 100)) (/ yy 400) -32045))
-     (* 3600.0 (nth 4 time))
-     (* 60.0 (nth 5 time))
-     (nth 6 time))
-)
-
-;; The heartbeat was just written, so its time stands in for the current time.
-(defun mcp:server-quiet-p (/ alive now)
-  (setq alive (vl-file-systime (mcp:path "server.alive"))
-        now (vl-file-systime (mcp:path "heartbeat")))
-  (and alive now
-       (> (- (mcp:systime-seconds now) (mcp:systime-seconds alive)) *mcp-quiet-seconds*))
+;; Counts polls rather than comparing clocks. After a computer sleeps, the file looks old,
+;; but no polls have passed, so the server gets its normal chance to report in.
+(defun mcp:server-quiet-p (/ seen)
+  (setq seen (vl-file-systime (mcp:path "server.alive")))
+  (if (equal seen *mcp-last-alive*)
+    (setq *mcp-unchanged-polls* (1+ *mcp-unchanged-polls*))
+    (setq *mcp-last-alive* seen
+          *mcp-unchanged-polls* 0)
+  )
+  (>= *mcp-unchanged-polls* *mcp-quiet-polls*)
 )
 
 ;; ---- Requests ----

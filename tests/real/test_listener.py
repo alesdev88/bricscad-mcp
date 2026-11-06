@@ -82,17 +82,25 @@ def test_status_reports_the_drawing(real_session):
     assert status["running"] is True and status["drawing"].lower().endswith(".dwg")
 
 
+def test_an_old_alive_file_alone_does_not_stop_the_listener(own_session):
+    # After a computer sleeps, the file looks old, but the server has not gone anywhere.
+    own_session.bridge.expire_alive_for_test()
+    time.sleep(5)
+    assert own_session.bridge.heartbeat_age() < 3
+    assert own_session.bridge.send("(+ 1 1)") == 2
+
+
 def test_quiet_server_leaves_a_copy_with_unsaved_work_open(own_session):
     add_line(own_session)
-    own_session.bridge.expire_alive_for_test()
-    assert wait_until(lambda: own_session.bridge.heartbeat_age() > 3, timeout=15)
+    own_session.bridge.send("(setq *mcp-quiet-polls* 4)")
+    assert wait_until(lambda: own_session.bridge.heartbeat_age() > 3, timeout=30)
     assert is_alive(own_session.pid)
 
 
 def test_quiet_server_closes_a_copy_with_nothing_to_lose(own_session):
     pid = own_session.pid
-    own_session.bridge.expire_alive_for_test()
-    assert wait_until(lambda: not is_alive(pid), timeout=20)
+    own_session.bridge.send("(setq *mcp-quiet-polls* 4)")
+    assert wait_until(lambda: not is_alive(pid), timeout=30)
 
 
 def test_a_second_start_refuses_while_this_version_runs(real_session):
@@ -131,6 +139,19 @@ def test_discard_with_two_modified_drawings_exits_without_saving(own_session, tm
 
     assert own_session.stop(discard=True)["forced"] is False
     assert (first.read_bytes(), second.read_bytes()) == sizes
+
+
+def test_discard_with_a_modified_read_only_drawing_needs_no_force(own_session, tmp_path):
+    path = tmp_path / "ro.dwg"
+    add_line(own_session)
+    save_as(own_session, path)
+    add_line(own_session)
+    save_as(own_session, tmp_path / "other.dwg")
+    before = path.read_bytes()
+    own_session.bridge.send(f'(progn (vla-open (mcp:documents) {lisp_path(path)} :vlax-true) (getvar "DWGNAME"))')
+    add_line(own_session)
+    assert own_session.stop(discard=True)["forced"] is False
+    assert path.read_bytes() == before
 
 
 def test_clean_stop_needs_no_force(own_session):

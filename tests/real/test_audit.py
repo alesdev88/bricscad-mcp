@@ -2,7 +2,8 @@ import pytest
 
 from bricscad_mcp.lispgen import lisp_path, lisp_value
 from bricscad_mcp.tools.audit import audit_report
-from bricscad_mcp.tools.read import list_xrefs
+from bricscad_mcp.tools.drawing import close_drawing, open_drawing
+from bricscad_mcp.tools.read import list_layers, list_xrefs
 from real.helpers import line_at, make_block_with_attributes, make_dwg
 
 pytestmark = pytest.mark.bricscad
@@ -44,12 +45,9 @@ def test_finds_each_problem(real_session, blank, tmp_path):
     bridge.send(f'(command "_.-XREF" "_A" {lisp_path(xref_file)} "0,0,0" "1" "1" "0")')
     assert [item["name"] for item in list_xrefs(bridge)["items"]] == ["MISSING"]
     assert list_xrefs(bridge)["items"][0]["resolved"] is True
-    xref_file.unlink()
-
     report = audit_report(bridge, allowed_layers=["A-*"])
     assert "EMPTY" in report["empty_layers"]["items"]
     assert "UNUSED" in report["unused_blocks"]["items"]
-    assert "MISSING" in [item["name"] for item in report["missing_xrefs"]["items"]]
     assert raised in [item["handle"] for item in report["non_zero_elevation"]["items"]]
     assert "BAD" in report["off_standard_layers"]["items"]
     assert "A-OK" not in report["off_standard_layers"]["items"]
@@ -114,3 +112,40 @@ def test_slovene_layer_names_are_matched(real_session, blank):
     make_layer(real_session, "Načrt")
     line_on(real_session, "Načrt")
     assert audit_report(real_session.bridge, allowed_layers=["NAČRT"])["off_standard_layers"]["count"] == 0
+
+
+def test_many_layers_are_counted_correctly(real_session, blank):
+    bridge = real_session.bridge
+    for index in range(300):
+        make_layer(real_session, f"L{index}")
+    bridge.send(
+        "(setq i 0) (repeat 300 (entmakex (list '(0 . \"LINE\") (cons 8 (strcat \"L\" (itoa i))) "
+        "'(10 0.0 0.0 0.0) '(11 1.0 1.0 0.0))) (setq i (1+ i)))"
+    )
+    assert audit_report(bridge)["empty_layers"]["count"] == 0
+    layers = list_layers(bridge, limit=2000)["items"]
+    assert sum(item["entity_count"] for item in layers) == 300
+
+
+def test_an_xref_is_judged_by_what_bricscad_resolved(real_session, blank, tmp_path):
+    bridge = real_session.bridge
+    host, other = tmp_path / "host.dwg", tmp_path / "MISSING.dwg"
+    bridge.send('(progn (vla-activate (vla-add (mcp:documents))) (getvar "DWGNAME"))')
+    make_dwg(real_session, other)
+    bridge.send(f'(command "_.-XREF" "_A" {lisp_path(other)} "0,0,0" "1" "1" "0")')
+    # A relative path, as real projects store them. It only makes sense beside the host drawing.
+    bridge.send('(vla-put-path (vla-item (vla-get-blocks (mcp:active-document)) "MISSING") "./MISSING.dwg")')
+    bridge.send(f'(command "_.SAVEAS" "" {lisp_path(host)})')
+    close_drawing(bridge, discard=True)
+
+    # Found where BricsCAD looks, whichever way the path is stored.
+    open_drawing(bridge, str(host))
+    assert list_xrefs(bridge)["items"][0]["path"] == "./MISSING.dwg"
+    assert audit_report(bridge)["missing_xrefs"]["count"] == 0
+    close_drawing(bridge, discard=True)
+
+    # Missing when the drawing opens: BricsCAD reports it, and no dialog stops the listener.
+    other.unlink()
+    open_drawing(bridge, str(host))
+    assert [item["name"] for item in audit_report(bridge)["missing_xrefs"]["items"]] == ["MISSING"]
+    close_drawing(bridge, discard=True)

@@ -98,5 +98,6 @@ class Bridge:
         heartbeat = "No heartbeat received." if age is None else f"Last heartbeat {age:.1f} seconds ago."
         return (
             f"BricsCAD did not answer within {timeout:g} seconds. A dialog may be blocking it, "
-            f"so check the BricsCAD window. {heartbeat}"
+            f"so check the BricsCAD window. {heartbeat} If it had already started this request, "
+            "it keeps running and its result is lost, so check the current state before retrying."
         )

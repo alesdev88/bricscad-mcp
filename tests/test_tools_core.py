@@ -1,5 +1,6 @@
 import pytest
 
+from bricscad_mcp import server
 from bricscad_mcp.tools import page_args
 
 pytestmark = pytest.mark.anyio
@@ -59,6 +60,26 @@ async def test_run_lisp_error_reaches_the_client(client, fake):
     await client.call_tool("bricscad_start", {})
     result = await client.call_tool("bricscad_run_lisp", {"code": "(car 1)"})
     assert result.is_error and "bad argument type" in result.content[0].text
+
+
+@pytest.fixture
+def exits(monkeypatch):
+    calls = []
+    monkeypatch.setattr(server, "_exit_now", lambda: calls.append(True))
+    return calls
+
+
+async def test_termination_signal_asks_the_listener_to_stop(client, fake, exits):
+    await client.call_tool("bricscad_start", {})
+    queue = server.session().bridge.queue_dir
+    server.handle_termination(15, None)
+    assert (queue / "quit.flag").exists() and exits == [True]
+
+
+async def test_termination_signal_with_no_session_just_exits(exits):
+    server.set_session(None)
+    server.handle_termination(15, None)
+    assert exits == [True]
 
 
 @pytest.mark.parametrize(

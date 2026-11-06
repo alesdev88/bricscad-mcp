@@ -1,5 +1,7 @@
 import pytest
 
+from bricscad_mcp.bridge import Bridge
+
 pytestmark = pytest.mark.anyio
 
 PAGE = {"items": [], "total": 0, "limit": 200, "offset": 0}
@@ -30,6 +32,17 @@ async def test_list_tools_default_to_200(started, fake, tool, function):
     result = await started.call_tool(tool, {})
     assert not result.is_error
     assert fake.requests[-1] == f"({function} 200 0)"
+
+
+@pytest.mark.parametrize(
+    "tool", ["bricscad_list_layers", "bricscad_list_blocks", "bricscad_list_xrefs", "bricscad_list_layouts"]
+)
+async def test_list_tools_accept_a_timeout(started, monkeypatch, tool):
+    seen = []
+    original = Bridge.send
+    monkeypatch.setattr(Bridge, "send", lambda self, expr, timeout=30.0: seen.append(timeout) or original(self, expr, timeout))
+    await started.call_tool(tool, {"timeout": 77})
+    assert seen == [77.0]
 
 
 async def test_limit_above_the_maximum_is_clamped(started, fake):

@@ -1,5 +1,7 @@
 import pytest
 
+from bricscad_mcp.bridge import Bridge
+
 pytestmark = pytest.mark.anyio
 
 
@@ -53,6 +55,37 @@ async def test_dxf_is_accepted(started, fake, tmp_path):
     path.write_text("0\nSECTION\n")
     result = await started.call_tool("bricscad_open_drawing", {"path": str(path)})
     assert not result.is_error and fake.requests[-1].startswith("(mcp:open-drawing ")
+
+
+@pytest.mark.parametrize("content", [b"hello", b"", b"0\nNOT A SECTION\n"])
+async def test_a_file_named_dxf_that_is_not_dxf_is_refused(started, fake, tmp_path, content):
+    path = tmp_path / "x.dxf"
+    path.write_bytes(content)
+    result = await started.call_tool("bricscad_open_drawing", {"path": str(path)})
+    assert result.is_error and "not a drawing" in result.content[0].text
+    assert fake.requests == []
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b"  0\r\nSECTION\r\n", b"0\nSECTION\n", b"\xef\xbb\xbf  0\nSECTION\n", b"999\ncomment\n  0\nSECTION\n",
+     b"AutoCAD Binary DXF\r\n"],
+)
+async def test_real_dxf_headers_are_accepted(started, fake, tmp_path, content):
+    path = tmp_path / "x.dxf"
+    path.write_bytes(content)
+    result = await started.call_tool("bricscad_open_drawing", {"path": str(path)})
+    assert not result.is_error
+
+
+async def test_open_allows_longer_than_the_usual_timeout(started, monkeypatch, dwg):
+    seen = []
+    original = Bridge.send
+    monkeypatch.setattr(Bridge, "send", lambda self, expr, timeout=30.0: seen.append(timeout) or original(self, expr, timeout))
+    await started.call_tool("bricscad_open_drawing", {"path": str(dwg)})
+    assert seen == [120.0]
+    await started.call_tool("bricscad_open_drawing", {"path": str(dwg), "timeout": 300})
+    assert seen[-1] == 300.0
 
 
 async def test_open_defaults_to_read_only(started, fake, dwg):

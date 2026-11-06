@@ -50,6 +50,11 @@ def test_timeout_mentions_dialog_and_removes_unclaimed_request(queue):
     assert list(queue.glob("*.lsp")) == []
 
 
+def test_timeout_says_a_started_request_keeps_running(queue):
+    with pytest.raises(BridgeTimeout, match="keeps running"):
+        Bridge(queue).send("x", timeout=0.1)
+
+
 def test_timeout_reports_the_heartbeat_age(queue):
     (queue / "heartbeat").write_text("beat", encoding="utf-8")
     with pytest.raises(BridgeTimeout, match=r"[Ll]ast heartbeat \d"):

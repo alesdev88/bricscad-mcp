@@ -1,7 +1,7 @@
 import pytest
 
 from bricscad_mcp.errors import SafetyRefused
-from bricscad_mcp.lispgen import call
+from bricscad_mcp.lispgen import call, lisp_path
 from bricscad_mcp.tools.drawing import close_drawing, drawing_info, open_drawing
 from real.helpers import add_line, make_dwg
 
@@ -67,3 +67,24 @@ def test_info_reports_modified_extents_and_layouts(real_session, tmp_path):
 
 def test_unsaved_count_is_zero_for_a_new_session(own_session):
     assert own_session.bridge.send(call("mcp:unsaved-count")) == 0
+
+
+def test_open_a_real_dxf(real_session, tmp_path, blank):
+    bridge = real_session.bridge
+    path = tmp_path / "exported.dxf"
+    add_line(real_session)
+    bridge.send(f'(command "_.SAVEAS" "DXF" "" {lisp_path(path)})')
+    assert path.stat().st_size > 0
+    info = open_drawing(bridge, str(path))
+    assert info["entity_count"] == 1
+    close_drawing(bridge, discard=True)
+
+
+def test_opening_a_file_that_is_already_open_does_not_block(real_session, tmp_path):
+    path = make_dwg(real_session, tmp_path / "twice.dwg")
+    open_drawing(real_session.bridge, str(path))
+    assert open_drawing(real_session.bridge, str(path))["name"] == "twice.dwg"
+    close_drawing(real_session.bridge)
+    if real_session.bridge.send('(getvar "DWGNAME")') == "twice.dwg":
+        close_drawing(real_session.bridge)
+    assert real_session.bridge.send("(+ 1 1)") == 2
