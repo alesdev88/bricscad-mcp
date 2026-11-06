@@ -174,8 +174,11 @@ report the total. Every tool carries MCP read-only or destructive annotations.
 5. The server does not permanently change BricsCAD settings. Any variable changed
    during a command is restored in the same request, and is restored on error too.
 6. `bricscad_start` always starts a new BricsCAD process and never attaches to one
-   already running. `bricscad_stop` stops only the process that server started, and
-   refuses if it has unsaved changes unless `discard=true`.
+   already running. It refuses if that version is already running, because a second
+   copy of a version does not start its listener. `bricscad_stop` stops only the
+   process that server started, and refuses if it has unsaved changes unless
+   `discard=true`. A failed start closes the copy it opened. If the server goes quiet,
+   a copy with nothing unsaved closes itself and one with unsaved work stays open.
 7. File paths from requests are passed as escaped LISP strings, never inserted as
    raw LISP.
 

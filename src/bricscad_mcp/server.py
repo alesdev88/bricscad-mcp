@@ -33,6 +33,3 @@ def main() -> None:
 
 
 from .tools import audit, core, drawing, read  # noqa: E402,F401  (registers the tools)
-
-if __name__ == "__main__":
-    main()

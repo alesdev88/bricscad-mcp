@@ -53,6 +53,12 @@ def own_session():
     _close(session)
 
 
+@pytest.fixture
+def no_shared_session():
+    """For tests that start BricsCAD another way, through the real command."""
+    _close_shared()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def close_bricscad_at_the_end():
     yield

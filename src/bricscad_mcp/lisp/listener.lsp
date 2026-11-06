@@ -145,7 +145,18 @@
 ;; Never prompts: stays open if there is work to keep and nobody asked to discard it.
 (defun mcp:quit-if-safe ()
   (cond
-    ((findfile (mcp:path "discard.flag")) (command "_.QUIT" "_Y"))
+    ((findfile (mcp:path "discard.flag"))
+     (mcp:discard-other-documents)
+     (command "_.QUIT" "_Y"))
     ((= (mcp:unsaved-count) 0) (command "_.QUIT"))
   )
+)
+
+;; _.QUIT _Y answers for one document only, and another modified one would then prompt.
+(defun mcp:discard-other-documents (/ active others)
+  (setq active (mcp:active-document))
+  (vlax-for document (mcp:documents)
+    (if (not (equal document active)) (setq others (cons document others)))
+  )
+  (foreach document others (vla-close document :vlax-false))
 )
