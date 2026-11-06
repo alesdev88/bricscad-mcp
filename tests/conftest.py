@@ -6,7 +6,9 @@ import time
 from pathlib import Path
 
 import pytest
+from mcp import Client
 
+from bricscad_mcp import server
 from bricscad_mcp.platforms.base import Installation, Platform
 from bricscad_mcp.session import Session
 from fake_listener import FakeListener
@@ -116,3 +118,20 @@ def session(fake):
     s.stop_wait_seconds = 0.2
     yield s
     s.close()
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture
+async def client(fake):
+    """An MCP client connected to the real server, with BricsCAD faked."""
+    s = Session(fake)
+    s.stop_wait_seconds = 0.2
+    server.set_session(s)
+    async with Client(server.mcp) as connected:
+        yield connected
+    s.close()
+    server.set_session(None)

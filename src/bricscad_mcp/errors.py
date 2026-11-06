@@ -1,8 +1,10 @@
 """Errors the server reports to MCP clients. Messages say what to do next."""
 
+from mcp.server.mcpserver.exceptions import ToolError
 
-class BricsCADError(Exception):
-    """Base class for every error this server reports."""
+
+class BricsCADError(ToolError):
+    """Base class for every error this server reports. MCP passes the message to the client."""
 
 
 class BridgeTimeout(BricsCADError):

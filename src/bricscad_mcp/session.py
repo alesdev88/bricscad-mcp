@@ -32,6 +32,10 @@ class Session:
         atexit.register(self.close)
 
     @property
+    def platform(self) -> Platform:
+        return self._platform
+
+    @property
     def bridge(self) -> Bridge | None:
         return self._bridge
 
