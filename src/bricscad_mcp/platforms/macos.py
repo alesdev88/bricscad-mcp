@@ -5,10 +5,8 @@ import subprocess
 import time
 from pathlib import Path
 
-import psutil
-
 from ..errors import BricsCADError
-from .base import Installation, Platform, sorted_newest_first, spawn
+from .base import Installation, Platform, pids_running_from, sorted_newest_first, spawn
 
 DEFAULT_ROOT = Path("/Applications")
 START_WAIT_SECONDS = 30.0
@@ -17,12 +15,7 @@ _BUNDLE = re.compile(r"BricsCAD V(\d+)\.app")
 
 def bundle_pids(app: Path) -> set[int]:
     """Return the ids of processes running from inside an app bundle."""
-    prefix = f"{app}/"
-    found = set()
-    for process in psutil.process_iter(["pid", "exe"]):
-        if (process.info.get("exe") or "").startswith(prefix):
-            found.add(process.info["pid"])
-    return found
+    return pids_running_from(app)
 
 
 class MacOS(Platform):

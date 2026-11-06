@@ -3,6 +3,7 @@
 import re
 from pathlib import Path
 
+from . import base
 from .base import Installation, Platform, sorted_newest_first
 
 DEFAULT_ROOT = Path("/opt/bricsys/bricscad")
@@ -24,3 +25,7 @@ class Linux(Platform):
 
     def launch_command(self, inst: Installation, script: Path) -> list[str]:
         return [str(inst.executable), "-b", str(script)]
+
+    def running_pids(self, inst: Installation) -> set[int]:
+        # bricscad.sh starts a program that lives beside it.
+        return base.pids_running_from(inst.executable.parent)

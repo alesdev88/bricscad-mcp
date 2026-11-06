@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from pathlib import Path
 
 import psutil
@@ -5,7 +7,7 @@ import pytest
 
 from bricscad_mcp.errors import BricsCADError
 from bricscad_mcp.platforms import get_platform, select_installation
-from bricscad_mcp.platforms.base import Installation, Platform, is_alive, terminate
+from bricscad_mcp.platforms.base import Installation, Platform, is_alive, pids_running_from, terminate
 from bricscad_mcp.platforms.linux import Linux
 from bricscad_mcp.platforms.macos import MacOS
 from bricscad_mcp.platforms.windows import Windows
@@ -146,6 +148,36 @@ def test_is_alive_for_this_process_and_a_dead_pid():
 
 def test_terminate_a_dead_pid_is_not_an_error():
     terminate(99999999)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX signals")
+def test_terminate_forces_a_process_that_ignores_the_request():
+    code = (
+        "import signal, time\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        "print('ready', flush=True)\n"
+        "time.sleep(60)\n"
+    )
+    child = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True)
+    child.stdout.readline()
+    terminate(child.pid, grace_seconds=0.2)
+    assert is_alive(child.pid) is False
+
+
+def test_pids_running_from_matches_a_file_or_a_folder_above_it():
+    import os
+
+    exe = Path(psutil.Process().exe())
+    assert os.getpid() in pids_running_from(exe)
+    assert os.getpid() in pids_running_from(exe.parent)
+    assert pids_running_from(exe.parent / "no-such-program") == set()
+
+
+def test_linux_looks_for_running_copies_in_the_install_folder(monkeypatch):
+    seen = []
+    monkeypatch.setattr("bricscad_mcp.platforms.base.pids_running_from", lambda p: seen.append(p) or set())
+    Linux().running_pids(Installation("26", Path("/opt/bricsys/bricscad/v26/bricscad.sh")))
+    assert seen == [Path("/opt/bricsys/bricscad/v26")]
 
 
 def test_macos_identifies_the_new_process_only(monkeypatch):
