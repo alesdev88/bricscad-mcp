@@ -69,6 +69,7 @@
   (cond
     ((null value) "null")
     ((eq value T) "true")
+    ((eq value 'mcp:false) "false")
     ((= kind 'STR) (mcp:json-string value))
     ((= kind 'INT) (itoa value))
     ((= kind 'REAL) (mcp:json-real value))

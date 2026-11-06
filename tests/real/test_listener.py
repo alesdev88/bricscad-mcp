@@ -29,6 +29,10 @@ def test_json_round_trips_text(real_session, text):
         ("(cons 1 2)", [1, 2]),
         ('(mcp:obj (list (cons "a" 1) (cons "b" (mcp:arr nil))))', {"a": 1, "b": []}),
         ('(mcp:obj nil)', {}),
+        ("(mcp:bool nil)", False),
+        ("(mcp:bool T)", True),
+        ("(mcp:bool :vlax-false)", False),
+        ("(mcp:bool :vlax-true)", True),
     ],
 )
 def test_json_encodes_values(real_session, expr, expected):
