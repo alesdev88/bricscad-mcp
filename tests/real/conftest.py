@@ -6,6 +6,7 @@ closes the shared one first.
 
 import pytest
 
+from bricscad_mcp.lispgen import call
 from bricscad_mcp.platforms import get_platform
 from bricscad_mcp.platforms.base import is_alive
 from bricscad_mcp.session import Session
@@ -31,6 +32,15 @@ def real_session():
         _shared = Session(get_platform())
         _shared.start()
     return _shared
+
+
+@pytest.fixture
+def blank(real_session):
+    """Make a new empty drawing current, and discard it afterwards."""
+    bridge = real_session.bridge
+    bridge.send('(progn (vla-activate (vla-add (mcp:documents))) (getvar "DWGNAME"))')
+    yield
+    bridge.send(call("mcp:close-drawing"))
 
 
 @pytest.fixture

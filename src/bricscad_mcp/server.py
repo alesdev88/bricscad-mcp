@@ -32,7 +32,7 @@ def main() -> None:
     mcp.run("stdio")
 
 
-from .tools import core, drawing  # noqa: E402,F401  (registers the tools)
+from .tools import core, drawing, read  # noqa: E402,F401  (registers the tools)
 
 if __name__ == "__main__":
     main()
