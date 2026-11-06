@@ -1,0 +1,13 @@
+;; Q: can a new blank document be made first, so that the last real drawing can close?
+(add-line)
+(command "_.SAVEAS" "" (strcat *dir* "real.dwg"))
+(setq *docs* (vla-get-documents (vlax-get-acad-object)))
+(setq *real* (vla-get-activedocument (vlax-get-acad-object)))
+(log-kv "start" (list (state) (vla-get-count *docs*)))
+(setq *blank* (safe "vla-add" (function (lambda () (vla-add *docs*)))))
+(log-kv "after-add" (list (state) (vla-get-count *docs*)))
+(safe "close-real" (function (lambda () (vla-close *real* :vlax-false) (state))))
+(log-kv "after-close-running" T)
+(log-kv "final" (list (state) (vla-get-count *docs*)))
+(safe "can-draw" (function (lambda () (add-line) (sslength (ssget "_X")))))
+(finish)
