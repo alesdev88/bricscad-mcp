@@ -27,16 +27,21 @@ def line_at(session, x, y):
     )
 
 
-def make_block_with_attributes(session, name, attributes, inserts=1):
-    """Define a block with attribute definitions and insert it with values."""
+def define_block_with_attribute_definitions(session, name, tags):
     send = session.bridge.send
     send(f"(entmake (list '(0 . \"BLOCK\") (cons 2 {lisp_value(name)}) '(70 . 2) '(10 0.0 0.0 0.0)))")
-    for tag in attributes:
+    for tag in tags:
         send(
             "(entmake (list '(0 . \"ATTDEF\") '(10 0.0 0.0 0.0) '(40 . 1.0) '(1 . \"\") '(3 . \"?\") "
             f"(cons 2 {lisp_value(tag)}) '(70 . 0)))"
         )
     send("(entmake (list '(0 . \"ENDBLK\")))")
+
+
+def make_block_with_attributes(session, name, attributes, inserts=1):
+    """Define a block with attribute definitions and insert it with values."""
+    send = session.bridge.send
+    define_block_with_attribute_definitions(session, name, attributes)
     for _ in range(inserts):
         send(f"(entmake (list '(0 . \"INSERT\") '(66 . 1) (cons 2 {lisp_value(name)}) '(10 0.0 0.0 0.0)))")
         for tag, value in attributes.items():

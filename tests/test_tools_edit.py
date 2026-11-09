@@ -117,6 +117,10 @@ async def test_create_sends_full_points(started, fake):
         [{"type": "polyline", "vertices": [[0, 0]]}],
         [{"type": "polyline", "vertices": [[0, 0], [1, 1]], "bulges": [1]}],
         [{"type": "text", "position": [0, 0], "text": "a\nb", "height": 1}],
+        [{"type": "dimension", "kind": "angular", "start": [0, 0], "end": [1, 0], "line_point": [1, 1]}],
+        [{"type": "hatch", "points": [[0, 0], [1, 1]]}],
+        [{"type": "hatch", "points": [[0, 0], [1, 0], [1, 1]], "scale": 0}],
+        [{"type": "insert", "block": "*U1", "position": [0, 0]}],
     ],
 )
 async def test_create_refuses_bad_items(started, fake, entities):

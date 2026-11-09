@@ -332,6 +332,57 @@
   )
 )
 
+;; Objects made through a layout's block land on that layout, whichever tab is current.
+(defun mcp:space-object (layout)
+  (vla-get-block (vla-item (vla-get-layouts (mcp:active-document)) layout))
+)
+
+(defun mcp:finish-object (object layer)
+  (vla-put-layer object layer)
+  (vlax-vla-object->ename object)
+)
+
+(defun mcp:make-dimension (layer layout kind start end line-point rotation / space)
+  (setq space (mcp:space-object layout))
+  (mcp:finish-object
+    (if (= kind "aligned")
+      (vla-adddimaligned space (vlax-3d-point start) (vlax-3d-point end) (vlax-3d-point line-point))
+      (vla-adddimrotated space (vlax-3d-point start) (vlax-3d-point end) (vlax-3d-point line-point) rotation)
+    )
+    layer
+  )
+)
+
+;; The boundary exists only to compute the hatch. A non-associative hatch survives its erasure.
+(defun mcp:make-hatch (layer layout points pattern scale angle / boundary hatch)
+  (setq boundary (mcp:make-polyline layer layout points nil T 0.0)
+        hatch (vl-catch-all-apply 'vla-addhatch (list (mcp:space-object layout) 1 pattern :vlax-false)))
+  (if (vl-catch-all-error-p hatch)
+    (mcp:fail (strcat "Hatch pattern " pattern " was not found."))
+  )
+  (vla-put-patternscale hatch scale)
+  (vla-put-patternangle hatch angle)
+  (vla-appendouterloop hatch
+    (vlax-safearray-fill
+      (vlax-make-safearray vlax-vbobject '(0 . 0))
+      (list (vlax-ename->vla-object boundary))
+    )
+  )
+  (vla-evaluate hatch)
+  (entdel boundary)
+  (mcp:finish-object hatch layer)
+)
+
+(defun mcp:make-insert (layer layout block position scale rotation attributes / object)
+  (if (not (tblsearch "BLOCK" block))
+    (mcp:fail (strcat "Block " block " does not exist in this drawing."))
+  )
+  (setq object
+    (vla-insertblock (mcp:space-object layout) (vlax-3d-point position) block scale scale scale rotation))
+  (if attributes (mcp:apply-attribute-values object attributes))
+  (mcp:finish-object object layer)
+)
+
 ;; item is (kind layer arguments...), and kind names the mcp:make- function that draws it.
 (defun mcp:make (item layout)
   (apply

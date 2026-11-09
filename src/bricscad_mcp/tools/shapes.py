@@ -134,4 +134,55 @@ class MText(Shape):
         ]
 
 
-Entity = Annotated[Line | Polyline | Circle | Arc | Text | MText, Field(discriminator="type")]
+class Dimension(Shape):
+    type: Literal["dimension"]
+    kind: Literal["linear", "aligned"] = "linear"
+    start: Point
+    end: Point
+    line_point: Point
+    rotation: Number = 0.0
+
+    def to_wire(self) -> list[Any]:
+        return [
+            self.type, self.layer, self.kind, point3(self.start), point3(self.end), point3(self.line_point),
+            math.radians(self.rotation),
+        ]
+
+
+class Hatch(Shape):
+    type: Literal["hatch"]
+    points: Annotated[list[Point2D], Field(min_length=3)]
+    pattern: str = "SOLID"
+    scale: Positive = 1.0
+    angle: Number = 0.0
+
+    def to_wire(self) -> list[Any]:
+        points = [[float(x), float(y)] for x, y in self.points]
+        return [self.type, self.layer, points, self.pattern, float(self.scale), math.radians(self.angle)]
+
+
+class Insert(Shape):
+    type: Literal["insert"]
+    block: str
+    position: Point
+    scale: Positive = 1.0
+    rotation: Number = 0.0
+    attributes: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("block")
+    @classmethod
+    def named_block(cls, value: str) -> str:
+        if not value or value.startswith("*"):
+            raise ValueError("give the name of a block defined in the drawing")
+        return value
+
+    def to_wire(self) -> list[Any]:
+        return [
+            self.type, self.layer, self.block, point3(self.position), float(self.scale),
+            math.radians(self.rotation), [[tag, value] for tag, value in self.attributes.items()],
+        ]
+
+
+Entity = Annotated[
+    Line | Polyline | Circle | Arc | Text | MText | Dimension | Hatch | Insert, Field(discriminator="type")
+]

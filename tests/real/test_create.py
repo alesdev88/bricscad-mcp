@@ -4,7 +4,7 @@ import pytest
 
 from bricscad_mcp.errors import LispError
 from bricscad_mcp.tools import edit, read
-from real.helpers import dxf_value, entity_count
+from real.helpers import define_block_with_attribute_definitions, dxf_value, entity_count
 
 pytestmark = pytest.mark.bricscad
 
@@ -93,3 +93,75 @@ def test_a_batch_is_one_undo_step(real_session, blank):
     make(real_session, LINE, LINE, LINE)
     assert edit.undo(real_session.bridge)["undone"] == 1
     assert entity_count(real_session) == 0
+
+
+def test_linear_dimension_measures_its_points(real_session, blank):
+    item = make(real_session, {"type": "dimension", "start": [0, 0], "end": [10, 0], "line_point": [5, 4]})["created"][0]
+    assert item["type"] == "DIMENSION"
+    assert dxf_value(real_session, item["handle"], 13) == [0.0, 0.0, 0.0]
+    assert dxf_value(real_session, item["handle"], 14) == [10.0, 0.0, 0.0]
+
+
+def test_aligned_dimension_is_aligned(real_session, blank):
+    item = {"type": "dimension", "kind": "aligned", "start": [0, 0], "end": [10, 5], "line_point": [5, 8]}
+    handle = make(real_session, item)["created"][0]["handle"]
+    subclasses = [value for code, value in read.get_entity(real_session.bridge, handle)["dxf"] if code == 100]
+    assert "AcDbAlignedDimension" in subclasses and "AcDbRotatedDimension" not in subclasses
+
+
+def test_hatch_leaves_only_the_hatch(real_session, blank):
+    item = make(
+        real_session,
+        {"type": "hatch", "points": [[0, 0], [10, 0], [10, 10], [0, 10]], "pattern": "ANSI31", "scale": 2, "angle": 45},
+    )["created"][0]
+    assert entity_count(real_session) == 1 and item["type"] == "HATCH"
+    assert dxf_value(real_session, item["handle"], 2) == "ANSI31" and dxf_value(real_session, item["handle"], 41) == 2.0
+    assert dxf_value(real_session, item["handle"], 52) == pytest.approx(math.pi / 4)
+
+
+def test_a_solid_hatch_is_the_default(real_session, blank):
+    handle = make(real_session, {"type": "hatch", "points": [[0, 0], [1, 0], [1, 1]]})["created"][0]["handle"]
+    assert dxf_value(real_session, handle, 2) == "SOLID"
+
+
+def test_an_unknown_hatch_pattern_leaves_nothing(real_session, blank):
+    with pytest.raises(LispError, match="NOPE99"):
+        make(real_session, {"type": "hatch", "points": [[0, 0], [1, 0], [1, 1]], "pattern": "NOPE99"})
+    assert entity_count(real_session) == 0 and real_session.bridge.send('(getvar "CMDACTIVE")') == 0
+
+
+def test_inserts_a_block_with_attributes(real_session, blank):
+    define_block_with_attribute_definitions(real_session, "TB", ["NASLOV", "ST"])
+    handle = make(
+        real_session,
+        {"type": "insert", "block": "TB", "position": [3, 4], "scale": 2, "attributes": {"naslov": "Načrt"}},
+    )["created"][0]["handle"]
+    item = read.read_attributes(real_session.bridge)["items"][0]
+    assert item["block"] == "TB" and item["attributes"]["NASLOV"] == "Načrt"
+    assert dxf_value(real_session, handle, 10) == [3.0, 4.0, 0.0] and dxf_value(real_session, handle, 41) == 2.0
+
+
+def test_an_unknown_block_leaves_nothing(real_session, blank):
+    with pytest.raises(LispError, match="Nope"):
+        make(real_session, LINE, {"type": "insert", "block": "Nope", "position": [0, 0]})
+    assert entity_count(real_session) == 0
+
+
+def test_an_unknown_attribute_tag_leaves_nothing(real_session, blank):
+    define_block_with_attribute_definitions(real_session, "TB", ["NASLOV"])
+    with pytest.raises(LispError, match="NOPE"):
+        make(real_session, {"type": "insert", "block": "TB", "position": [0, 0], "attributes": {"NOPE": "x"}})
+    assert entity_count(real_session) == 0
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        {"type": "dimension", "start": [0, 0], "end": [10, 0], "line_point": [5, 4]},
+        {"type": "hatch", "points": [[0, 0], [1, 0], [1, 1]]},
+    ],
+)
+def test_dimensions_and_hatches_land_on_the_layout(real_session, blank, item):
+    edit.set_layer(real_session.bridge, "A")
+    created = make(real_session, {**item, "layer": "A"}, layout="Layout1")["created"][0]
+    assert created["layout"] == "Layout1" and created["layer"] == "A"
