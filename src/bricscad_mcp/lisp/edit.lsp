@@ -238,3 +238,119 @@
 (defun mcp:set-attributes (updates)
   (mcp:edit 'mcp:set-attributes-now (list updates))
 )
+
+;; ---- Create ----
+
+(defun mcp:layout-name (layout / match)
+  (if layout
+    (progn
+      (foreach name (cons "Model" (layoutlist))
+        (if (mcp:same-name-p name layout) (setq match name))
+      )
+      (cond (match) ((mcp:fail (strcat "Layout " layout " does not exist."))))
+    )
+    "Model"
+  )
+)
+
+(defun mcp:space-groups (layout)
+  (list (cons 67 (if (= layout "Model") 0 1)) (cons 410 layout))
+)
+
+(defun mcp:style-groups (style)
+  (if style
+    (if (tblsearch "STYLE" style)
+      (list (cons 7 style))
+      (mcp:fail (strcat "Text style " style " does not exist in this drawing."))
+    )
+  )
+)
+
+(defun mcp:entmake-on (kind subclass layer layout groups / entity)
+  (setq entity
+    (entmakex
+      (append
+        (list (cons 0 kind) '(100 . "AcDbEntity"))
+        (mcp:space-groups layout)
+        (list (cons 8 layer) (cons 100 subclass))
+        groups
+      )
+    )
+  )
+  (if (null entity) (mcp:fail (strcat "BricsCAD refused to create a " kind ".")))
+  entity
+)
+
+(defun mcp:make-line (layer layout start end)
+  (mcp:entmake-on "LINE" "AcDbLine" layer layout (list (cons 10 start) (cons 11 end)))
+)
+
+(defun mcp:polyline-groups (vertices bulges / out index)
+  (setq index 0)
+  (foreach vertex vertices
+    (setq out (cons (cons 10 vertex) out))
+    (if bulges (setq out (cons (cons 42 (nth index bulges)) out)))
+    (setq index (1+ index))
+  )
+  (reverse out)
+)
+
+(defun mcp:make-polyline (layer layout vertices bulges closed elevation)
+  (mcp:entmake-on "LWPOLYLINE" "AcDbPolyline" layer layout
+    (append
+      (list (cons 90 (length vertices)) (cons 70 (if closed 1 0)) (cons 38 elevation))
+      (mcp:polyline-groups vertices bulges)
+    )
+  )
+)
+
+(defun mcp:make-circle (layer layout center radius)
+  (mcp:entmake-on "CIRCLE" "AcDbCircle" layer layout (list (cons 10 center) (cons 40 radius)))
+)
+
+(defun mcp:make-arc (layer layout center radius start-angle end-angle)
+  (mcp:entmake-on "ARC" "AcDbCircle" layer layout
+    (list (cons 10 center) (cons 40 radius) '(100 . "AcDbArc") (cons 50 start-angle) (cons 51 end-angle))
+  )
+)
+
+(defun mcp:make-text (layer layout position text height rotation style)
+  (mcp:entmake-on "TEXT" "AcDbText" layer layout
+    (append
+      (list (cons 10 position) (cons 40 height) (cons 1 text) (cons 50 rotation))
+      (mcp:style-groups style)
+    )
+  )
+)
+
+(defun mcp:make-mtext (layer layout position text height width style)
+  (mcp:entmake-on "MTEXT" "AcDbMText" layer layout
+    (append
+      (list (cons 10 position) (cons 40 height) (cons 41 width) (cons 1 text))
+      (mcp:style-groups style)
+    )
+  )
+)
+
+;; item is (kind layer arguments...), and kind names the mcp:make- function that draws it.
+(defun mcp:make (item layout)
+  (apply
+    (read (strcat "mcp:make-" (car item)))
+    (append (list (mcp:require-layer (cadr item)) layout) (cddr item))
+  )
+)
+
+(defun mcp:create-entities-now (layout items / name created)
+  (setq name (mcp:layout-name layout))
+  (setq created (mapcar (function (lambda (item) (mcp:make item name))) items))
+  (mcp:obj
+    (list
+      (cons "created" (mcp:arr (mapcar 'mcp:entity-item created)))
+      (cons "count" (length created))
+    )
+  )
+)
+
+(defun mcp:create-entities (layout items)
+  (mcp:edit 'mcp:create-entities-now (list layout items))
+)

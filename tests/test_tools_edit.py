@@ -1,5 +1,8 @@
 import pytest
 
+from bricscad_mcp.errors import BricsCADError
+from bricscad_mcp.tools import edit
+
 pytestmark = pytest.mark.anyio
 
 
@@ -91,3 +94,35 @@ async def test_set_attributes_sends_tags_and_values(started, fake):
 @pytest.mark.parametrize("updates", [[], [{"handle": "1A", "values": {}}], [{"handle": "x)", "values": {"T": "v"}}]])
 async def test_set_attributes_refuses_bad_updates(started, fake, updates):
     await refused(started, fake, "bricscad_set_attributes", {"updates": updates})
+
+
+LINE = {"type": "line", "start": [0, 0], "end": [5, 5]}
+
+
+async def test_create_sends_full_points(started, fake):
+    fake.responses["mcp:create-entities"] = {"created": [], "count": 0}
+    await started.call_tool("bricscad_create_entities", {"entities": [LINE]})
+    assert fake.requests[-1] == '(mcp:create-entities nil (list (list "line" "0" (list 0.0 0.0 0.0) (list 5.0 5.0 0.0))))'
+
+
+@pytest.mark.parametrize(
+    "entities",
+    [
+        [],
+        [LINE] * 2001,
+        [{"type": "circle", "center": [0, 0], "radius": 0}],
+        [{"type": "text", "position": [0, 0], "text": "x", "height": 0}],
+        [{"type": "nurb"}],
+        [{**LINE, "colour": 3}],
+        [{"type": "polyline", "vertices": [[0, 0]]}],
+        [{"type": "polyline", "vertices": [[0, 0], [1, 1]], "bulges": [1]}],
+        [{"type": "text", "position": [0, 0], "text": "a\nb", "height": 1}],
+    ],
+)
+async def test_create_refuses_bad_items(started, fake, entities):
+    await refused(started, fake, "bricscad_create_entities", {"entities": entities})
+
+
+def test_create_refuses_a_point_that_is_not_finite():
+    with pytest.raises(BricsCADError):
+        edit.create_entities(None, [{"type": "line", "start": [float("nan"), 0], "end": [1, 1]}])

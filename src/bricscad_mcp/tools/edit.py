@@ -10,9 +10,9 @@ from ..bridge import Bridge
 from ..errors import BricsCADError
 from ..lispgen import call
 from ..server import mcp
-from . import DESTRUCTIVE, MAX_LIMIT
+from . import CHANGES_STATE, DESTRUCTIVE, MAX_LIMIT
 from .read import _run
-from .shapes import AttributeUpdate, Point, Rotate, Scale, line_breaks, point3
+from .shapes import AttributeUpdate, Entity, Point, Rotate, Scale, line_breaks, point3
 
 MAX_UNDO_STEPS = 100
 _HANDLE = re.compile(r"[0-9A-F]+")
@@ -199,3 +199,27 @@ async def bricscad_set_attributes(updates: list[AttributeUpdate], timeout: float
     bricscad_read_attributes. Tags match whatever their case.
     """
     return await _run(set_attributes, updates, timeout)
+
+
+def create_entities(
+    bridge: Bridge, entities: list[Any], layout: str | None = None, timeout: float = 30.0
+) -> dict[str, Any]:
+    checked = _validated(list[Entity], entities)
+    if not checked:
+        raise BricsCADError("No entities given.")
+    if len(checked) > MAX_LIMIT:
+        raise BricsCADError(f"At most {MAX_LIMIT} entities per call.")
+    return bridge.send(call("mcp:create-entities", layout, [entity.to_wire() for entity in checked]), timeout)
+
+
+@mcp.tool(annotations=CHANGES_STATE)
+async def bricscad_create_entities(
+    entities: list[Entity], layout: str | None = None, timeout: float = 30.0
+) -> dict[str, Any]:
+    """Draw entities and return their handles. Draws all of them or none, as one undo step.
+
+    entities: up to 2000 items, each with a type and an optional layer, which must exist.
+    Points are [x, y] or [x, y, z]. Angles are degrees.
+    layout: a sheet name. The default is the model, whichever tab is current.
+    """
+    return await _run(create_entities, entities, layout, timeout)

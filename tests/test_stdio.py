@@ -25,7 +25,7 @@ async def test_the_installed_command_serves_every_tool():
         "bricscad_list_layers", "bricscad_list_blocks", "bricscad_list_xrefs", "bricscad_list_layouts",
         "bricscad_query_entities", "bricscad_get_entity", "bricscad_read_attributes", "bricscad_find_text",
         "bricscad_audit_report",
-        "bricscad_undo", "bricscad_erase_entities", "bricscad_set_layer", "bricscad_modify_entities", "bricscad_set_attributes",
+        "bricscad_undo", "bricscad_erase_entities", "bricscad_set_layer", "bricscad_modify_entities", "bricscad_set_attributes", "bricscad_create_entities",
     }
 
 
