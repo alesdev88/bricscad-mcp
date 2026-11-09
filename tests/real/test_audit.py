@@ -1,4 +1,6 @@
 import pytest
+from ezdxf.math import Vec2
+from ezdxf.render import mleader
 
 from bricscad_mcp.lispgen import lisp_path, lisp_value
 from bricscad_mcp.tools.audit import audit_report
@@ -94,6 +96,46 @@ def test_a_line_with_one_raised_end_is_found(real_session, blank):
         "(entmakex (list '(0 . \"LINE\") '(10 0.0 0.0 0.0) '(11 1.0 1.0 3.0)))"
     )
     assert handle in [i["handle"] for i in audit_report(real_session.bridge)["non_zero_elevation"]["items"]]
+
+
+def test_a_direction_is_not_an_elevation(real_session, blank):
+    real_session.bridge.send(
+        "(entmakex (list '(0 . \"XLINE\") '(100 . \"AcDbEntity\") '(100 . \"AcDbXline\") '(10 0.0 0.0 0.0) '(11 0.0 0.6 0.8)))"
+    )
+    assert audit_report(real_session.bridge)["non_zero_elevation"]["count"] == 0
+
+
+def test_a_raised_xline_is_found(real_session, blank):
+    handle = real_session.bridge.send(
+        "(entmakex (list '(0 . \"XLINE\") '(100 . \"AcDbEntity\") '(100 . \"AcDbXline\") '(10 0.0 0.0 2.0) '(11 1.0 0.0 0.0)))"
+    )
+    assert handle in [i["handle"] for i in audit_report(real_session.bridge)["non_zero_elevation"]["items"]]
+
+
+def test_raised_text_is_found(real_session, blank):
+    handle = real_session.bridge.send(
+        "(entmakex (list '(0 . \"TEXT\") '(10 0.0 0.0 -648.75) '(40 . 1.0) '(1 . \"x\")))"
+    )
+    item = audit_report(real_session.bridge)["non_zero_elevation"]["items"][0]
+    assert item["handle"] == handle and item["elevation"] == -648.75
+
+
+def test_a_flat_multileader_is_not_reported(real_session, dxf_drawing):
+    builder = dxf_drawing.modelspace().add_multileader_mtext("Standard")
+    builder.set_content("Label")
+    builder.add_leader_line(mleader.ConnectionSide.left, [Vec2(-5, 5)])
+    builder.build(insert=Vec2(5, 5))
+    dxf_drawing.open_in_bricscad()
+    bridge = real_session.bridge
+    assert bridge.send("(cdr (assoc 0 (entget (ssname (ssget \"_X\") 0))))") == "MULTILEADER"
+    assert audit_report(bridge)["non_zero_elevation"]["count"] == 0
+
+
+# Shortened from a real MULTILEADER: group 11 is a normal, the last group 10 a scale, group 110 its location.
+def test_a_raised_multileader_has_its_elevation(real_session, blank):
+    assert real_session.bridge.send(
+        "(mcp:elevation-of '((0 . \"MULTILEADER\") (10 5.0 5.0 4.0) (11 0.0 0.0 1.0) (110 5.0 5.0 4.0) (10 1.0 1.0 1.0)))"
+    ) == 4.0
 
 
 def test_flat_geometry_is_not_reported(real_session, blank):

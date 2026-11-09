@@ -144,6 +144,22 @@ order mark, so do not rely on it.
 - `vla-attachexternalreference` does not exist. `_.-XREF _A` attaches an xref, and `vla-put-path` changes
   its stored path.
 
+## Found by the first real drawing, 06.11.2026
+
+- Missing fonts show no dialog. BricsCAD prints the substitution on the command line.
+- While the listener runs, the window can keep showing `Drawing1` with another drawing open and current.
+- Each state of a dynamic block is an anonymous block such as `*U276`, and inserts use that name.
+  The anonymous block's BLOCK_RECORD holds xdata `AcDbBlockRepBTag`, with group 1005 the handle of the
+  source BLOCK_RECORD. On that drawing this matched `vla-get-effectivename` for all 38 anonymous inserts.
+- `vla-get-effectivename` returns the anonymous name for a block that has this xdata but none of the
+  dynamic block's other data. `vla-get-isdynamicblock` is then false.
+- BricsCAD renames anonymous blocks when it loads a DXF, for example `*U1` to `*U4`.
+- `entmod` returns nil on a BLOCK_RECORD. `vla-setxdata` failed on both a block and a line, with
+  `DISP_E_PARAMNOTFOUND` or `E_INVALIDARG`. `entmake` of a BLOCK with xdata stores it on the BLOCK entity,
+  not the BLOCK_RECORD. Tests use a DXF written with `ezdxf` instead.
+- On a MULTILEADER, group 11 is a normal `(0 0 1)` and the last group 10 a scale `(1 1 1)`. Group 110 is its location.
+- An insert of an anonymous block with no entities has no bounding box.
+
 ## Open points
 
 - `FILEDIA` read `0` at the start of every `-b` run. Whether that is the user's stored value or

@@ -46,6 +46,32 @@ def make_block_with_attributes(session, name, attributes, inserts=1):
         send("(entmake (list '(0 . \"SEQEND\")))")
 
 
+def add_dynamic_block(doc, source, attributes=None, inserts=1):
+    """Add a dynamic block to an ezdxf document as a DWG stores it, and return its anonymous name.
+
+    Each state of a dynamic block is an anonymous block whose BLOCK_RECORD names the
+    source block in AcDbBlockRepBTag xdata. Inserts use the anonymous name.
+    LISP cannot write this xdata: entmod refuses a BLOCK_RECORD and vla-setxdata fails.
+    BricsCAD renames anonymous blocks when it loads the file, so the returned name is good
+    only inside this document.
+    """
+    attributes = attributes or {}
+    definitions = [doc.blocks.new(source), doc.blocks.new_anonymous_block("U")]
+    for definition in definitions:
+        for tag in attributes:
+            definition.add_attdef(tag, (0, 0))
+    anonymous = definitions[1]
+    doc.appids.add("AcDbBlockRepBTag")
+    anonymous.block_record.set_xdata(
+        "AcDbBlockRepBTag", [(1070, 1), (1005, definitions[0].block_record.dxf.handle)]
+    )
+    for _ in range(inserts):
+        insert = doc.modelspace().add_blockref(anonymous.name, (0, 0))
+        for tag, value in attributes.items():
+            insert.add_attrib(tag, value, (0, 0))
+    return anonymous.name
+
+
 def make_dwg(session, path, lines=1):
     """Create a temporary drawing, save it, and leave it closed."""
     for _ in range(lines):

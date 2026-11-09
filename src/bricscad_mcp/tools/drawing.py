@@ -76,7 +76,10 @@ async def bricscad_close_drawing(discard: bool = False) -> dict[str, Any]:
 
 @mcp.tool(annotations=READ_ONLY)
 async def bricscad_drawing_info() -> dict[str, Any]:
-    """Describe the current drawing: name, path, read-only and modified state, units, limits, extents, entity count and layouts."""
+    """Describe the current drawing: name, path, read-only and modified state, units, limits, entity count and layouts.
+
+    extents and limits describe current_layout only, which may be a sheet rather than the model.
+    """
 
     def run() -> dict[str, Any]:
         return drawing_info(session().require_bridge())

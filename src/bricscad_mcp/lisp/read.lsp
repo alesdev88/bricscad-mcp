@@ -22,6 +22,7 @@
       (cons "modified" (mcp:bool (mcp:active-modified-p)))
       (cons "units" (getvar "INSUNITS"))
       (cons "limits" (list (getvar "LIMMIN") (getvar "LIMMAX")))
+      (cons "current_layout" (getvar "CTAB"))
       (cons "extents" (list (getvar "EXTMIN") (getvar "EXTMAX")))
       (cons "entity_count" (mcp:count-selection (ssget "_X")))
       (cons "layouts" (cons "Model" (layoutlist)))
@@ -188,37 +189,81 @@
   out
 )
 
-;; Counts how often each block is inserted inside other block definitions.
-(defun mcp:nested-insert-counts (records / counts data name found)
+;; Each state of a dynamic block is an anonymous block, and inserts use that name. Its
+;; BLOCK_RECORD names the source block in xdata. Returns (anonymous-name . source-name) pairs.
+(defun mcp:dynamic-block-sources (records / out name owner xdata source)
+  (foreach record records
+    (if (= (logand (mcp:group 70 record) 1) 1)
+      (progn
+        (setq name (mcp:group 2 record)
+              owner (mcp:group 330 (entget (tblobjname "BLOCK" name)))
+              xdata (assoc "AcDbBlockRepBTag" (mcp:group -3 (entget owner '("AcDbBlockRepBTag"))))
+              source (if xdata (handent (mcp:group 1005 (cdr xdata)))))
+        (if source (setq out (cons (cons name (mcp:group 2 (entget source))) out)))
+      )
+    )
+  )
+  out
+)
+
+;; The name a person knows a block by: a dynamic block's own name, not its anonymous one.
+(defun mcp:source-name (name sources)
+  (cond ((cdr (assoc name sources))) (name))
+)
+
+(defun mcp:add-count (name counts / key found)
+  (setq key (strcase name)
+        found (assoc key counts))
+  (if found
+    (subst (cons key (1+ (cdr found))) found counts)
+    (cons (cons key 1) counts)
+  )
+)
+
+;; How often each block is inserted, in a layout or inside other blocks. An insert of an
+;; anonymous state counts for that state and for the dynamic block it comes from.
+(defun mcp:insert-counts (records / sources counts tally data)
+  (setq sources (mcp:dynamic-block-sources records))
+  (setq tally
+    (function (lambda (name / source)
+      (setq counts (mcp:add-count name counts)
+            source (cdr (assoc name sources)))
+      (if source (setq counts (mcp:add-count source counts)))
+    ))
+  )
+  (foreach entity (mcp:selection-list (ssget "_X" '((0 . "INSERT"))))
+    (tally (mcp:group 2 (entget entity)))
+  )
   (foreach record records
     (foreach entity (mcp:block-entities record)
       (setq data (entget entity))
-      (if (= (mcp:group 0 data) "INSERT")
-        (progn
-          (setq name (strcase (mcp:group 2 data))
-                found (assoc name counts))
-          (setq counts
-            (if found
-              (subst (cons name (1+ (cdr found))) found counts)
-              (cons (cons name 1) counts)
-            )
-          )
-        )
-      )
+      (if (= (mcp:group 0 data) "INSERT") (tally (mcp:group 2 data)))
     )
   )
   counts
 )
 
-(defun mcp:insert-count (name nested)
-  (+ (mcp:count-selection
-       (ssget "_X" (list '(0 . "INSERT") (cons 2 (mcp:wild-literal name)))))
-     (cond ((cdr (assoc (strcase name) nested))) (0)))
+(defun mcp:insert-count (name counts)
+  (cond ((cdr (assoc (strcase name) counts))) (0))
 )
 
-(defun mcp:list-blocks (include-anonymous limit offset / all nested records flags)
+;; Inserts of the blocks matching a name pattern, as a list. Dynamic blocks go by their source
+;; name, which a selection filter cannot see, so all anonymous inserts are selected and sorted here.
+(defun mcp:select-by-block (filter block sources / pattern name out)
+  (setq pattern (strcase block))
+  (foreach entity (mcp:selection-list (ssget "_X" (append filter (list (cons 2 (strcat block ",`**"))))))
+    (setq name (mcp:group 2 (entget entity)))
+    (if (or (wcmatch (strcase name) pattern)
+            (wcmatch (strcase (mcp:source-name name sources)) pattern))
+      (setq out (cons entity out))
+    )
+  )
+  (reverse out)
+)
+
+(defun mcp:list-blocks (include-anonymous limit offset / all counts records flags)
   (setq all (mcp:block-records)
-        nested (mcp:nested-insert-counts all))
+        counts (mcp:insert-counts all))
   (foreach record all
     (setq flags (mcp:group 70 record))
     (if (or include-anonymous (= (logand flags 1) 0))
@@ -234,7 +279,7 @@
         (mcp:obj
           (list
             (cons "name" name)
-            (cons "insert_count" (mcp:insert-count name nested))
+            (cons "insert_count" (mcp:insert-count name counts))
             (cons "entity_count" (length (mcp:block-entities record)))
             (cons "is_xref" (mcp:bool (/= (logand flags 12) 0)))
             (cons "is_anonymous" (mcp:bool (= (logand flags 1) 1)))
@@ -276,7 +321,6 @@
   (if types (setq filter (cons (cons 0 types) filter)))
   (if (and block (not types)) (setq filter (cons '(0 . "INSERT") filter)))
   (if layer (setq filter (cons (cons 8 layer) filter)))
-  (if block (setq filter (cons (cons 2 block) filter)))
   (if layout (setq filter (cons (cons 410 layout) filter)))
   (reverse filter)
 )
@@ -307,21 +351,30 @@
   )
 )
 
-(defun mcp:query-entities (types layer block window layout limit offset / selection found)
-  (setq selection (mcp:select (mcp:entity-filter types layer block layout)))
-  (if window
+(defun mcp:query-entities (types layer block window layout limit offset / filter selection entities found)
+  (setq filter (mcp:entity-filter types layer block layout))
+  (if (or block window)
     (progn
-      (foreach entity (mcp:selection-list selection)
-        (if (mcp:overlaps-p (mcp:bounding-box entity) window)
+      (setq entities
+        (if block
+          (mcp:select-by-block filter block (mcp:dynamic-block-sources (mcp:block-records)))
+          (mcp:selection-list (mcp:select filter))
+        )
+      )
+      (foreach entity entities
+        (if (or (null window) (mcp:overlaps-p (mcp:bounding-box entity) window))
           (setq found (cons entity found))
         )
       )
       (setq found (reverse found))
       (mcp:page (mapcar 'mcp:entity-item (mcp:slice found limit offset)) (length found) limit offset)
     )
-    (mcp:page
-      (mapcar 'mcp:entity-item (mcp:selection-slice selection limit offset))
-      (mcp:count-selection selection) limit offset)
+    (progn
+      (setq selection (mcp:select filter))
+      (mcp:page
+        (mapcar 'mcp:entity-item (mcp:selection-slice selection limit offset))
+        (mcp:count-selection selection) limit offset)
+    )
   )
 )
 
@@ -351,11 +404,16 @@
   (reverse out)
 )
 
-(defun mcp:read-attributes (block layout limit offset / selection filter)
-  (setq filter (list '(0 . "INSERT") '(66 . 1)))
-  (if block (setq filter (append filter (list (cons 2 block)))))
+(defun mcp:read-attributes (block layout limit offset / sources inserts filter)
+  (setq sources (mcp:dynamic-block-sources (mcp:block-records))
+        filter (list '(0 . "INSERT") '(66 . 1)))
   (if layout (setq filter (append filter (list (cons 410 layout)))))
-  (setq selection (ssget "_X" filter))
+  (setq inserts
+    (if block
+      (mcp:select-by-block filter block sources)
+      (mcp:selection-list (ssget "_X" filter))
+    )
+  )
   (mcp:page
     (mapcar
       (function (lambda (insert / data)
@@ -363,7 +421,7 @@
         (mcp:obj
           (list
             (cons "handle" (mcp:group 5 data))
-            (cons "block" (mcp:group 2 data))
+            (cons "block" (mcp:source-name (mcp:group 2 data) sources))
             (cons "layout" (mcp:layout-of data))
             (cons "attributes"
               (mcp:obj
@@ -374,8 +432,8 @@
                   (mcp:insert-attributes insert))))
           )
         )))
-      (mcp:selection-slice selection limit offset))
-    (mcp:count-selection selection) limit offset)
+      (mcp:slice inserts limit offset))
+    (length inserts) limit offset)
 )
 
 ;; MTEXT longer than 250 characters is split across group 3 values before group 1.

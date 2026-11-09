@@ -65,6 +65,13 @@ def test_info_reports_modified_extents_and_layouts(real_session, tmp_path):
     close_drawing(real_session.bridge, discard=True)
 
 
+def test_info_names_the_layout_its_extents_describe(real_session, blank):
+    bridge = real_session.bridge
+    assert drawing_info(bridge)["current_layout"] == "Model"
+    bridge.send('(setvar "CTAB" "Layout1")')
+    assert drawing_info(bridge)["current_layout"] == "Layout1"
+
+
 def test_unsaved_count_is_zero_for_a_new_session(own_session):
     assert own_session.bridge.send(call("mcp:unsaved-count")) == 0
 

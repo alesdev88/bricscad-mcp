@@ -14,7 +14,10 @@ dependencies = [
 bricscad-mcp = "bricscad_mcp.server:main"
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = [
+    "ezdxf>=1.4.5",
+    "pytest>=8.0",
+]
 
 [build-system]
 requires = ["hatchling"]

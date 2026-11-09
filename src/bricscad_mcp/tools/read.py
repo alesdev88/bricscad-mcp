@@ -99,7 +99,10 @@ async def bricscad_list_layers(limit: int = DEFAULT_LIMIT, offset: int = 0, time
 async def bricscad_list_blocks(
     include_anonymous: bool = False, limit: int = DEFAULT_LIMIT, offset: int = 0, timeout: float = 30.0
 ) -> Page:
-    """List block definitions with insert counts, including inserts nested in other blocks. Up to 2000 per call."""
+    """List block definitions with insert counts, including nested inserts and inserts of dynamic blocks. Up to 2000 per call.
+
+    include_anonymous: also list the anonymous blocks, such as *U12, that hold a dynamic block's states.
+    """
     return await _run(list_blocks, include_anonymous, limit, offset, timeout)
 
 
@@ -129,9 +132,11 @@ async def bricscad_query_entities(
     """Find entities in the current drawing. Returns handle, type, layer, layout and bounding box. Up to 2000 per call.
 
     types: DXF names such as ["LINE", "CIRCLE"].
-    layer, block: names, which may use the wildcards * and ?.
+    layer, block: names, which may use the wildcards * and ?. A dynamic block goes by its own name.
     bbox: [min_x, min_y, max_x, max_y]; entities overlapping it match.
     layout: "Model" or a layout name.
+
+    An entity with no extent, such as an insert of an empty block, returns a null bounding box.
     """
     return await _run(query_entities, types, layer, block, bbox, layout, limit, offset, timeout)
 
@@ -152,7 +157,7 @@ async def bricscad_read_attributes(
 ) -> Page:
     """Read attribute values from block inserts, for example title block contents. Up to 2000 per call.
 
-    block: a block name, which may use the wildcards * and ?.
+    block: a block name, which may use the wildcards * and ?. A dynamic block goes by its own name.
     layout: "Model" or a layout name.
     """
     return await _run(read_attributes, block, layout, limit, offset, timeout)

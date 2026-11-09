@@ -45,7 +45,7 @@ claude mcp add bricscad -- uv --directory "/full/path/to/bricscad-mcp" run brics
 | `bricscad_start` / `bricscad_stop` | Starts or closes the server's own BricsCAD |
 | `bricscad_status` | Reports whether it's running, listener health and the current drawing |
 | `bricscad_open_drawing` / `bricscad_close_drawing` | Opens a DWG or DXF (read-only by default), or closes it |
-| `bricscad_drawing_info` | Name, path, state, units, limits, extents, entity count and layouts |
+| `bricscad_drawing_info` | Name, path, state, units, entity count, layouts, and the limits and extents of the current layout |
 | `bricscad_list_layers` / `_blocks` / `_xrefs` / `_layouts` | Lists what's in the drawing |
 | `bricscad_query_entities` | Finds entities by type, layer, block, layout or bounding box |
 | `bricscad_get_entity` | Returns all DXF values for one entity |
@@ -62,8 +62,11 @@ is 2000.
 - **One copy per version.** `bricscad_start` refuses if that BricsCAD version is already running,
   because a second copy of the same version doesn't start its listener. Close it first, or choose
   another version with `BRICSCAD_VERSION`.
-- **The window is occupied.** While the listener runs, its BricsCAD window paints but isn't meant
-  for hand use. Draw in a copy of another version, or stop the server first.
+- **The window is occupied.** While the listener runs, its BricsCAD window isn't meant for hand use,
+  and it may not show the open drawing. Trust the tools, not the window. Draw in a copy of another
+  version, or stop the server first.
+- **Dynamic blocks go by their own name.** Their inserts are stored under anonymous names such as
+  `*U12`. Block filters, insert counts and attribute results use the name you know.
 - **`bricscad_run_lisp` is powerful.** LISP can change or delete files and start programs, so every
   call goes through your client's tool approval.
 - **Timeouts.** If a dialog blocks BricsCAD, the call fails after its timeout (30 seconds by default)

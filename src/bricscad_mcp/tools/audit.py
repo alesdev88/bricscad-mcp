@@ -30,7 +30,8 @@ async def bricscad_audit_report(
     """Report empty layers, unused blocks, missing xrefs, entities not at zero elevation, and off-standard layer names.
 
     Each section has a total `count` and up to `sample_limit` `items`. Blocks and layers used only
-    inside other blocks count as used. Layers 0 and Defpoints are never reported.
+    inside other blocks count as used, and a dynamic block counts as used through its anonymous
+    states. Layers 0 and Defpoints are never reported.
 
     allowed_layers: name patterns such as ["A-*", "S-*"], ignoring case. Leave it out to skip this check.
     """

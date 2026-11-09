@@ -37,14 +37,14 @@
   (reverse out)
 )
 
-(defun mcp:unused-blocks (records / nested out name flags)
-  (setq nested (mcp:nested-insert-counts records))
+(defun mcp:unused-blocks (records / counts out name flags)
+  (setq counts (mcp:insert-counts records))
   (foreach record records
     (setq name (mcp:group 2 record)
           flags (mcp:group 70 record))
     (if (and (= (logand flags 1) 0)
              (= (logand flags 12) 0)
-             (= (mcp:insert-count name nested) 0))
+             (= (mcp:insert-count name counts) 0))
       (setq out (cons name out))
     )
   )
@@ -61,13 +61,24 @@
   (reverse out)
 )
 
-;; Point Z values and the elevation of 2D polylines. Returns nil when flat.
-(defun mcp:elevation-of (data / found)
+;; The groups that hold locations. Group 11 is a direction on many types, such as XLINE and MTEXT.
+;; On a MULTILEADER only group 110 will do: group 11 is its normal and the last group 10 its scale.
+(defun mcp:location-groups (type)
+  (cond
+    ((= type "MULTILEADER") '(110))
+    ((member type '("LINE" "TEXT" "DIMENSION" "MLINE" "SPLINE" "3DFACE" "SOLID" "TRACE")) '(10 11))
+    ('(10))
+  )
+)
+
+;; Location Z values and the elevation of 2D polylines. Returns nil when flat.
+(defun mcp:elevation-of (data / found groups)
+  (setq groups (mcp:location-groups (mcp:group 0 data)))
   (foreach pair data
     (cond
       ((and (= (car pair) 38) (numberp (cdr pair)) (> (abs (cdr pair)) 1e-9))
        (if (null found) (setq found (cdr pair))))
-      ((and (member (car pair) '(10 11)) (= (type (cdr pair)) 'LIST) (= (length (cdr pair)) 3)
+      ((and (member (car pair) groups) (= (type (cdr pair)) 'LIST) (= (length (cdr pair)) 3)
             (> (abs (caddr (cdr pair))) 1e-9))
        (if (null found) (setq found (caddr (cdr pair)))))
     )
