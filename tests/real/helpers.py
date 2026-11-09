@@ -3,6 +3,7 @@
 import time
 
 from bricscad_mcp.lispgen import call, lisp_path, lisp_value
+from bricscad_mcp.tools import read
 
 
 def wait_until(condition, timeout=10.0):
@@ -26,16 +27,21 @@ def line_at(session, x, y):
     )
 
 
-def make_block_with_attributes(session, name, attributes, inserts=1):
-    """Define a block with attribute definitions and insert it with values."""
+def define_block_with_attribute_definitions(session, name, tags):
     send = session.bridge.send
     send(f"(entmake (list '(0 . \"BLOCK\") (cons 2 {lisp_value(name)}) '(70 . 2) '(10 0.0 0.0 0.0)))")
-    for tag in attributes:
+    for tag in tags:
         send(
             "(entmake (list '(0 . \"ATTDEF\") '(10 0.0 0.0 0.0) '(40 . 1.0) '(1 . \"\") '(3 . \"?\") "
             f"(cons 2 {lisp_value(tag)}) '(70 . 0)))"
         )
     send("(entmake (list '(0 . \"ENDBLK\")))")
+
+
+def make_block_with_attributes(session, name, attributes, inserts=1):
+    """Define a block with attribute definitions and insert it with values."""
+    send = session.bridge.send
+    define_block_with_attribute_definitions(session, name, attributes)
     for _ in range(inserts):
         send(f"(entmake (list '(0 . \"INSERT\") '(66 . 1) (cons 2 {lisp_value(name)}) '(10 0.0 0.0 0.0)))")
         for tag, value in attributes.items():
@@ -94,3 +100,35 @@ def make_dwg(session, path, lines=1):
 
 def add_line(session):
     return session.bridge.send("(entmakex (list '(0 . \"LINE\") '(10 0.0 0.0 0.0) '(11 100.0 100.0 0.0)))")
+
+
+def entity_count(session):
+    return session.bridge.send('(mcp:count-selection (ssget "_X"))')
+
+
+def dxf_value(session, handle, code):
+    """The first value of a DXF group on an entity."""
+    return next(value for group, value in read.get_entity(session.bridge, handle)["dxf"] if group == code)
+
+
+def locked_line(session):
+    """Draw a line from the origin on a locked layer LK and return its handle."""
+    session.bridge.send(
+        "(entmakex (list '(0 . \"LAYER\") '(100 . \"AcDbSymbolTableRecord\") '(100 . \"AcDbLayerTableRecord\") "
+        "'(2 . \"LK\") '(70 . 4) '(62 . 1) '(6 . \"Continuous\")))"
+    )
+    return session.bridge.send(
+        "(entmakex (list '(0 . \"LINE\") '(8 . \"LK\") '(10 0.0 0.0 0.0) '(11 1.0 1.0 0.0)))"
+    )
+
+
+def circle_at(session, x, y, radius=1.0):
+    return session.bridge.send(
+        f"(entmakex (list '(0 . \"CIRCLE\") '(10 {float(x)} {float(y)} 0.0) '(40 . {float(radius)})))"
+    )
+
+
+def text_at(session, x, y, value):
+    return session.bridge.send(
+        f"(entmakex (list '(0 . \"TEXT\") '(10 {float(x)} {float(y)} 0.0) '(40 . 1.0) (cons 1 {lisp_value(value)})))"
+    )

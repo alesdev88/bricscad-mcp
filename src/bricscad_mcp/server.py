@@ -48,4 +48,4 @@ def main() -> None:
     mcp.run("stdio")
 
 
-from .tools import audit, core, drawing, read  # noqa: E402,F401  (registers the tools)
+from .tools import audit, core, drawing, edit, read  # noqa: E402,F401  (registers the tools)

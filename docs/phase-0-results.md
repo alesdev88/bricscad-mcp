@@ -160,6 +160,31 @@ order mark, so do not rely on it.
 - On a MULTILEADER, group 11 is a normal `(0 0 1)` and the last group 10 a scale `(1 1 1)`. Group 110 is its location.
 - An insert of an anonymous block with no entities has no bounding box.
 
+## Found while planning Phase 2, 09.11.2026
+
+Probed on temporary drawings, before the draw and edit tools were written.
+
+| Behaviour | Consequence |
+|---|---|
+| `_.UNDO 1` undoes the listener's own `_.DELAY`, not the last edit, also after `_Begin`/`_End` or `vla-startundomark` | Undo uses `_Mark` and `_Back` only |
+| `_.UNDO _Mark` then `_Back` reverts entities, layer creation and layer changes, one mark at a time, also after `_.SAVEAS` | `mcp:edit` marks; `bricscad_undo` goes back |
+| `_Back` with no mark left prompts on the command line; answering `_N` keeps the drawing | `mcp:undo` answers `_N` and stops |
+| `(exit)` or a LISP error inside `vl-catch-all-apply` is caught; `_Back` then rolls back and earlier marks survive | All-or-nothing edits |
+| `entmake` with an unknown layer creates it. An unknown text style or layout is accepted silently. A zero radius is accepted | Validate before making |
+| `entmake` of MTEXT takes 806 characters in one group 1 and reads back complete. A newline is stored raw | No chunking. Python turns newlines into `\P` |
+| `vla-adddimrotated`, `vla-adddimaligned`, `vla-addhatch` and `vla-insertblock` work on Lite, on a layout's block too. `vla-get-measurement` does not exist | Use these for dimension, hatch and insert |
+| A non-associative hatch keeps its area after its boundary is erased. An unknown pattern raises an error with no dialog | Temporary boundary, erased after evaluate |
+| `vla-insertblock` adds attributes with default values and no prompt. They move with the insert. `(vlax-invoke obj 'GetAttributes)` works | Insert and attribute writes |
+| On a locked layer `vla-move` still moves, `entmod` and `entdel` return nil and do nothing, `vla-delete` errors | Server refuses locked targets itself |
+| `entdel` on an erased entity restores it. `entdel` on an ATTRIB returns nil | Check `entget` first; refuse sub-entities |
+| `vla-add` on the Layers collection returns an existing layer, case-insensitive. `vla-put-freeze` on the current layer takes effect | Create-or-change is one call; refuse freezing the current layer |
+| Renaming layer 0, or onto an existing name, raises a raw automation error | Check first and say why |
+| `vla-load` of `CENTER` works from `iso.lin`; `bricscad.lin` does not exist | Linetypes load from `iso.lin` |
+| `_.SAVEAS` to `c.dxf` writes `c.dxf.dwg`. To a missing folder it does nothing and raises nothing | Python requires `.dwg` and a real folder; LISP confirms the new name |
+| `_.SAVEAS` over the drawing's own file shows no prompt. Over another file it prompts once. With `_Y` it replaces a file open as another drawing, and a read-only (chmod 444) file | Python refuses both cases |
+| `_.QSAVE` on a read-only drawing ends in `Function cancelled`, file unchanged. `_.SAVEAS` from one writes the copy and the document becomes writable under the new name | Refuse in-place save when read-only |
+| `DWGTITLED` is 0 on a new drawing | Unnamed drawings need a path |
+
 ## Open points
 
 - `FILEDIA` read `0` at the start of every `-b` run. Whether that is the user's stored value or
