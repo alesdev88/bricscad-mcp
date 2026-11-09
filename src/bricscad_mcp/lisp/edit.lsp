@@ -180,3 +180,61 @@
 (defun mcp:modify-entities (handles move rotate scale layer color linetype text)
   (mcp:edit 'mcp:modify-entities-now (list handles move rotate scale layer color linetype text))
 )
+
+;; ---- Attributes ----
+
+(defun mcp:join (items separator / out)
+  (foreach item items
+    (setq out (if out (strcat out separator item) item))
+  )
+  (cond (out) (""))
+)
+
+;; pairs is a list of (tag text). Sets every attribute with that tag and returns how many.
+(defun mcp:apply-attribute-values (object pairs / attributes count matched)
+  (setq attributes (vlax-invoke object 'GetAttributes)
+        count 0)
+  (foreach pair pairs
+    (setq matched nil)
+    (foreach attribute attributes
+      (if (mcp:same-name-p (vla-get-tagstring attribute) (car pair))
+        (progn
+          (vla-put-textstring attribute (cadr pair))
+          (setq matched T
+                count (1+ count))
+        )
+      )
+    )
+    (if (not matched)
+      (mcp:fail
+        (strcat "No attribute " (car pair) " on this insert. It has: "
+                (mcp:join (mapcar 'vla-get-tagstring attributes) ", ") "."))
+    )
+  )
+  count
+)
+
+(defun mcp:attribute-insert (handle entity / object)
+  (if (= (mcp:group 0 (entget entity)) "INSERT") (setq object (vlax-ename->vla-object entity)))
+  (if (or (null object) (= (vla-get-hasattributes object) :vlax-false))
+    (mcp:fail (strcat handle " is not a block insert with attributes."))
+  )
+  object
+)
+
+(defun mcp:set-attributes-now (updates / targets count)
+  (setq targets (mcp:edit-targets (mapcar 'car updates))
+        count 0)
+  (foreach pair (mapcar 'cons updates targets)
+    (setq count
+      (+ count
+         (mcp:apply-attribute-values
+           (mcp:attribute-insert (caar pair) (cdr pair))
+           (cadar pair))))
+  )
+  (mcp:obj (list (cons "inserts" (length updates)) (cons "attributes" count)))
+)
+
+(defun mcp:set-attributes (updates)
+  (mcp:edit 'mcp:set-attributes-now (list updates))
+)

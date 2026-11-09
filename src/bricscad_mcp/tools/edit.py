@@ -12,7 +12,7 @@ from ..lispgen import call
 from ..server import mcp
 from . import DESTRUCTIVE, MAX_LIMIT
 from .read import _run
-from .shapes import Point, Rotate, Scale, line_breaks, point3
+from .shapes import AttributeUpdate, Point, Rotate, Scale, line_breaks, point3
 
 MAX_UNDO_STEPS = 100
 _HANDLE = re.compile(r"[0-9A-F]+")
@@ -176,3 +176,26 @@ async def bricscad_modify_entities(
     text: new text for TEXT, MTEXT or MULTILEADER. Change attributes with bricscad_set_attributes.
     """
     return await _run(modify_entities, handles, move, rotate, scale, layer, color, linetype, text, timeout)
+
+
+def set_attributes(
+    bridge: Bridge, updates: list[AttributeUpdate | dict[str, Any]], timeout: float = 30.0
+) -> dict[str, Any]:
+    checked: list[AttributeUpdate] = _validated(list[AttributeUpdate], updates)
+    if not checked:
+        raise BricsCADError("No updates given.")
+    wire = [
+        [check_handles([update.handle])[0], [[tag, value] for tag, value in update.values.items()]]
+        for update in checked
+    ]
+    return bridge.send(call("mcp:set-attributes", wire), timeout)
+
+
+@mcp.tool(annotations=DESTRUCTIVE)
+async def bricscad_set_attributes(updates: list[AttributeUpdate], timeout: float = 30.0) -> dict[str, Any]:
+    """Set attribute values on block inserts, such as a title block. Changes all of them or none.
+
+    updates: [{"handle": insert handle, "values": {tag: text}}]. Get handles and tags from
+    bricscad_read_attributes. Tags match whatever their case.
+    """
+    return await _run(set_attributes, updates, timeout)

@@ -80,3 +80,14 @@ async def test_modify_turns_line_breaks_into_mtext_codes(started, fake):
 )
 async def test_modify_refuses_bad_changes(started, fake, change):
     await refused(started, fake, "bricscad_modify_entities", {"handles": ["1A"], **change})
+
+
+async def test_set_attributes_sends_tags_and_values(started, fake):
+    fake.responses["mcp:set-attributes"] = {"inserts": 1, "attributes": 1}
+    await started.call_tool("bricscad_set_attributes", {"updates": [{"handle": "1a", "values": {"T": "v"}}]})
+    assert fake.requests[-1] == '(mcp:set-attributes (list (list "1A" (list (list "T" "v")))))'
+
+
+@pytest.mark.parametrize("updates", [[], [{"handle": "1A", "values": {}}], [{"handle": "x)", "values": {"T": "v"}}]])
+async def test_set_attributes_refuses_bad_updates(started, fake, updates):
+    await refused(started, fake, "bricscad_set_attributes", {"updates": updates})

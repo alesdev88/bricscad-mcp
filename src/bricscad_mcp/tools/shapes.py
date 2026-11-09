@@ -31,3 +31,8 @@ class Rotate(Strict):
 class Scale(Strict):
     factor: Positive
     base: Point
+
+
+class AttributeUpdate(Strict):
+    handle: str
+    values: Annotated[dict[str, str], Field(min_length=1)]
