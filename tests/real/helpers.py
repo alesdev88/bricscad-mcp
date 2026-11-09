@@ -72,6 +72,17 @@ def add_dynamic_block(doc, source, attributes=None, inserts=1):
     return anonymous.name
 
 
+def add_table(session, rows, columns, cells):
+    """Add a table at (10, 20) and fill the given {(row, column): text} cells."""
+    send = session.bridge.send
+    send(
+        "(setq test:table (vla-addtable (vla-get-modelspace (mcp:active-document)) "
+        f"(vlax-3d-point (list 10.0 20.0 0.0)) {rows} {columns} 5.0 30.0))"
+    )
+    for (row, column), text in cells.items():
+        send(f"(vla-settext test:table {row} {column} {lisp_value(text)})")
+
+
 def make_dwg(session, path, lines=1):
     """Create a temporary drawing, save it, and leave it closed."""
     for _ in range(lines):

@@ -171,5 +171,9 @@ async def bricscad_find_text(
     offset: int = 0,
     timeout: float = 30.0,
 ) -> Page:
-    """Search TEXT, MTEXT and block attribute values for literal text. Up to 2000 per call."""
+    """Search TEXT, MTEXT, MULTILEADER, table cell and block attribute text for literal text.
+
+    A table cell comes back with its table's handle and position, plus its row and column.
+    Up to 2000 per call.
+    """
     return await _run(find_text, query, case_sensitive, limit, offset, timeout)

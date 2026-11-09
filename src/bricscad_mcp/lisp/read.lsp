@@ -451,17 +451,57 @@
   )
 )
 
-(defun mcp:text-item (data layout text)
+;; A MULTILEADER's text is the group 304 before its first leader (group 302). Later 304s are
+;; section markers such as LEADER_LINE{, and one with block content has no text at all.
+(defun mcp:multileader-text (data / text)
+  (while (and data (not text) (/= (caar data) 302))
+    (if (= (caar data) 304) (setq text (cdar data)))
+    (setq data (cdr data))
+  )
+  text
+)
+
+;; On a MULTILEADER group 10 is the content base, and group 12 is where the text sits.
+(defun mcp:text-position (data)
+  (mcp:group (if (= (mcp:group 0 data) "MULTILEADER") 12 10) data)
+)
+
+(defun mcp:text-item (data layout text extra)
   (mcp:obj
-    (list
-      (cons "handle" (mcp:group 5 data))
-      (cons "type" (mcp:group 0 data))
-      (cons "text" text)
-      (cons "layer" (mcp:group 8 data))
-      (cons "layout" layout)
-      (cons "position" (mcp:group 10 data))
+    (append
+      (list
+        (cons "handle" (mcp:group 5 data))
+        (cons "type" (mcp:group 0 data))
+        (cons "text" text)
+        (cons "layer" (mcp:group 8 data))
+        (cons "layout" layout)
+        (cons "position" (mcp:text-position data))
+      )
+      extra
     )
   )
+)
+
+;; One item per matching cell. Cells merged into another read as empty, so they do not repeat it.
+(defun mcp:table-matches (entity query case-sensitive / table data row column text out)
+  (setq table (vlax-ename->vla-object entity)
+        data (entget entity)
+        row 0)
+  (repeat (vla-get-rows table)
+    (setq column 0)
+    (repeat (vla-get-columns table)
+      (setq text (vla-gettext table row column))
+      (if (mcp:text-matches-p text query case-sensitive)
+        (setq out
+          (cons
+            (mcp:text-item data (mcp:layout-of data) text (list (cons "row" row) (cons "column" column)))
+            out))
+      )
+      (setq column (1+ column))
+    )
+    (setq row (1+ row))
+  )
+  (reverse out)
 )
 
 (defun mcp:find-text (query case-sensitive limit offset / found data text layout)
@@ -469,7 +509,19 @@
     (setq data (entget entity)
           text (mcp:text-of data))
     (if (mcp:text-matches-p text query case-sensitive)
-      (setq found (cons (mcp:text-item data (mcp:layout-of data) text) found))
+      (setq found (cons (mcp:text-item data (mcp:layout-of data) text nil) found))
+    )
+  )
+  (foreach entity (mcp:selection-list (ssget "_X" '((0 . "MULTILEADER"))))
+    (setq data (entget entity)
+          text (mcp:multileader-text data))
+    (if (and text (mcp:text-matches-p text query case-sensitive))
+      (setq found (cons (mcp:text-item data (mcp:layout-of data) text nil) found))
+    )
+  )
+  (foreach entity (mcp:selection-list (ssget "_X" '((0 . "ACAD_TABLE"))))
+    (foreach item (mcp:table-matches entity query case-sensitive)
+      (setq found (cons item found))
     )
   )
   (foreach insert (mcp:selection-list (ssget "_X" '((0 . "INSERT") (66 . 1))))
@@ -478,7 +530,7 @@
       (setq data (entget attribute)
             text (mcp:group 1 data))
       (if (mcp:text-matches-p text query case-sensitive)
-        (setq found (cons (mcp:text-item data layout text) found))
+        (setq found (cons (mcp:text-item data layout text nil) found))
       )
     )
   )

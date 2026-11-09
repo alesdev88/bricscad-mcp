@@ -50,7 +50,7 @@ claude mcp add bricscad -- uv --directory "/full/path/to/bricscad-mcp" run brics
 | `bricscad_query_entities` | Finds entities by type, layer, block, layout or bounding box |
 | `bricscad_get_entity` | Returns all DXF values for one entity |
 | `bricscad_read_attributes` | Reads block attributes, such as title block contents |
-| `bricscad_find_text` | Searches TEXT, MTEXT and attribute values |
+| `bricscad_find_text` | Searches TEXT, MTEXT, MULTILEADER, table cell and attribute text |
 | `bricscad_audit_report` | Empty layers, unused blocks, missing xrefs, raised entities, off-standard layer names |
 | `bricscad_run_lisp` | Runs LISP for anything the other tools don't cover |
 

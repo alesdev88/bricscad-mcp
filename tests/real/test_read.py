@@ -1,11 +1,13 @@
 import time
 
 import pytest
+from ezdxf.math import Vec2
+from ezdxf.render import mleader
 
 from bricscad_mcp.errors import LispError
 from bricscad_mcp.lispgen import lisp_value
 from bricscad_mcp.tools import read
-from real.helpers import line_at, make_block_with_attributes
+from real.helpers import add_table, line_at, make_block_with_attributes
 
 pytestmark = pytest.mark.bricscad
 
@@ -149,6 +151,75 @@ def test_find_text_finds_attribute_values(real_session, blank):
     make_block_with_attributes(real_session, "TB", {"NASLOV": "needle here"})
     page = read.find_text(real_session.bridge, "needle")
     assert page["total"] == 1 and page["items"][0]["type"] == "ATTRIB"
+
+
+def add_text_multileader(doc, content):
+    builder = doc.modelspace().add_multileader_mtext("Standard")
+    builder.set_content(content)
+    builder.add_leader_line(mleader.ConnectionSide.left, [Vec2(-5, 5)])
+    builder.build(insert=Vec2(5, 5))
+
+
+def test_find_text_finds_multileader_text(real_session, dxf_drawing):
+    add_text_multileader(dxf_drawing, "needle Načrt")
+    dxf_drawing.open_in_bricscad()
+    page = read.find_text(real_session.bridge, "NAČRT")
+    assert page["total"] == 1
+    item = page["items"][0]
+    assert item["type"] == "MULTILEADER" and item["text"] == "needle Načrt"
+    assert item["layout"] == "Model" and item["position"] == [5.0, 5.0, 0.0]
+
+
+def test_find_text_reads_long_multileader_text(real_session, dxf_drawing):
+    long_text = "a" * 400 + "needle" + "b" * 400
+    add_text_multileader(dxf_drawing, long_text)
+    dxf_drawing.open_in_bricscad()
+    page = read.find_text(real_session.bridge, "needle")
+    assert page["total"] == 1 and page["items"][0]["text"] == long_text
+
+
+# Group 304 also holds section markers such as LEADER_LINE{, which are not text.
+def test_find_text_does_not_match_multileader_section_markers(real_session, dxf_drawing):
+    add_text_multileader(dxf_drawing, "needle")
+    block = dxf_drawing.blocks.new("MARK")
+    block.add_line((0, 0), (1, 1))
+    builder = dxf_drawing.modelspace().add_multileader_block("Standard")
+    builder.set_content("MARK")
+    builder.add_leader_line(mleader.ConnectionSide.left, [Vec2(-5, 5)])
+    builder.build(insert=Vec2(5, 5))
+    dxf_drawing.open_in_bricscad()
+    assert read.find_text(real_session.bridge, "LEADER_LINE")["total"] == 0
+    assert read.find_text(real_session.bridge, "needle")["total"] == 1
+
+
+def test_find_text_finds_table_cells(real_session, blank):
+    add_table(real_session, 3, 2, {(1, 0): "other", (2, 1): "needle Načrt"})
+    page = read.find_text(real_session.bridge, "NAČRT")
+    assert page["total"] == 1
+    item = page["items"][0]
+    assert item["type"] == "ACAD_TABLE" and item["text"] == "needle Načrt"
+    assert (item["row"], item["column"]) == (2, 1)
+    assert item["layout"] == "Model" and item["position"] == [10.0, 20.0, 0.0]
+
+
+def test_find_text_returns_each_matching_table_cell(real_session, blank):
+    add_table(real_session, 3, 2, {(1, 0): "needle one", (1, 1): "needle two", (2, 0): "other"})
+    page = read.find_text(real_session.bridge, "needle")
+    assert [(item["row"], item["column"]) for item in page["items"]] == [(1, 0), (1, 1)]
+
+
+def test_find_text_reads_long_table_cells(real_session, blank):
+    long_text = "a" * 400 + "needle" + "b" * 400
+    add_table(real_session, 3, 2, {(1, 1): long_text})
+    page = read.find_text(real_session.bridge, "needle")
+    assert page["total"] == 1 and page["items"][0]["text"] == long_text
+
+
+# A new table's first row is one title cell merged across all columns.
+def test_find_text_reports_a_merged_table_cell_once(real_session, blank):
+    add_table(real_session, 3, 2, {(0, 0): "needle title"})
+    page = read.find_text(real_session.bridge, "needle")
+    assert page["total"] == 1 and (page["items"][0]["row"], page["items"][0]["column"]) == (0, 0)
 
 
 def test_entities_in_paper_space_report_their_layout(real_session, blank):
