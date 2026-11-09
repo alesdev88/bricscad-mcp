@@ -52,6 +52,13 @@ claude mcp add bricscad -- uv --directory "/full/path/to/bricscad-mcp" run brics
 | `bricscad_read_attributes` | Reads block attributes, such as title block contents |
 | `bricscad_find_text` | Searches TEXT, MTEXT, MULTILEADER, table cell and attribute text |
 | `bricscad_audit_report` | Empty layers, unused blocks, missing xrefs, raised entities, off-standard layer names |
+| `bricscad_create_entities` | Draws lines, polylines, circles, arcs, text, MTEXT, dimensions, hatches and block inserts |
+| `bricscad_modify_entities` | Moves, rotates, scales, or changes layer, color, linetype or text |
+| `bricscad_erase_entities` | Erases entities by handle |
+| `bricscad_set_layer` | Creates or changes a layer |
+| `bricscad_set_attributes` | Sets block attribute values, such as title block contents |
+| `bricscad_undo` | Undoes edit tool calls, one step each |
+| `bricscad_save_drawing` | Saves to a new path, or over the open file with `overwrite=true` |
 | `bricscad_run_lisp` | Runs LISP for anything the other tools don't cover |
 
 List tools take `limit` and `offset` and report `total`. The default limit is 200 and the maximum
@@ -80,6 +87,12 @@ is 2000.
 - If the client exits, a copy with nothing unsaved closes by itself. A copy with unsaved work stays
   open so you can save it.
 - The server doesn't permanently change BricsCAD settings.
+- Each edit tool call is all-or-nothing and one undo step. Edits made through `bricscad_run_lisp` have
+  no step of their own, so they go back with the step before them.
+- Entities on locked layers are refused, and missing layers are never created by drawing on them.
+- Saving over an existing file needs `overwrite=true`, and the server checks that before BricsCAD is
+  involved. A read-only drawing can only be saved to a new path, a file open as another drawing or
+  marked read-only is never replaced, and a replaced file leaves a `.bak` beside it.
 
 ## Environment variables
 
