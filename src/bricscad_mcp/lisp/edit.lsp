@@ -120,8 +120,9 @@
 )
 
 (defun mcp:set-layer-now (name new-name color linetype on frozen locked / created layer)
-  (setq created (null (tblsearch "LAYER" name))
-        layer (vla-add (vla-get-layers (mcp:active-document)) name))
+  (setq created (null (tblsearch "LAYER" name)))
+  (if (and created new-name) (mcp:require-layer name))
+  (setq layer (vla-add (vla-get-layers (mcp:active-document)) name))
   (if color (vla-put-color layer color))
   (if linetype
     (progn
@@ -150,17 +151,17 @@
 
 ;; ---- Modify ----
 
-(defun mcp:set-entity-text (object kind text)
+(defun mcp:set-entity-text (object kind text line-break)
   (if (not (vlax-property-available-p object 'TextString))
     (mcp:fail (strcat kind " has no text."))
   )
-  (if (and (= kind "TEXT") (vl-string-search "\\P" text))
+  (if (and (= kind "TEXT") line-break)
     (mcp:fail "TEXT holds one line. Use MTEXT for line breaks.")
   )
   (vla-put-textstring object text)
 )
 
-(defun mcp:modify-entities-now (handles move rotate scale layer color linetype text / targets object)
+(defun mcp:modify-entities-now (handles move rotate scale layer color linetype text line-break / targets object)
   (setq targets (mcp:edit-targets handles))
   (if layer (mcp:require-layer layer))
   (if linetype (mcp:ensure-linetype linetype))
@@ -169,7 +170,7 @@
     (if layer (vla-put-layer object layer))
     (if color (vla-put-color object color))
     (if linetype (vla-put-linetype object linetype))
-    (if text (mcp:set-entity-text object (mcp:group 0 (entget entity)) text))
+    (if text (mcp:set-entity-text object (mcp:group 0 (entget entity)) text line-break))
     (if move (vla-move object (vlax-3d-point '(0.0 0.0 0.0)) (vlax-3d-point move)))
     (if rotate (vla-rotate object (vlax-3d-point (cadr rotate)) (car rotate)))
     (if scale (vla-scaleentity object (vlax-3d-point (cadr scale)) (car scale)))
@@ -177,18 +178,11 @@
   (mcp:obj (list (cons "modified" (length targets))))
 )
 
-(defun mcp:modify-entities (handles move rotate scale layer color linetype text)
-  (mcp:edit 'mcp:modify-entities-now (list handles move rotate scale layer color linetype text))
+(defun mcp:modify-entities (handles move rotate scale layer color linetype text line-break)
+  (mcp:edit 'mcp:modify-entities-now (list handles move rotate scale layer color linetype text line-break))
 )
 
 ;; ---- Attributes ----
-
-(defun mcp:join (items separator / out)
-  (foreach item items
-    (setq out (if out (strcat out separator item) item))
-  )
-  (cond (out) (""))
-)
 
 ;; pairs is a list of (tag text). Sets every attribute with that tag and returns how many.
 (defun mcp:apply-attribute-values (object pairs / attributes count matched)
@@ -355,6 +349,9 @@
 
 ;; The boundary exists only to compute the hatch. A non-associative hatch survives its erasure.
 (defun mcp:make-hatch (layer layout points pattern scale angle / boundary hatch)
+  (if (mcp:layer-locked-p layer)  ; entdel could not remove the boundary from a locked layer
+    (mcp:fail (strcat "Layer " layer " is locked. Unlock it with bricscad_set_layer."))
+  )
   (setq boundary (mcp:make-polyline layer layout points nil T 0.0)
         hatch (vl-catch-all-apply 'vla-addhatch (list (mcp:space-object layout) 1 pattern :vlax-false)))
   (if (vl-catch-all-error-p hatch)

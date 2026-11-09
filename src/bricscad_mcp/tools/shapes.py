@@ -17,7 +17,19 @@ def point3(point: list[float]) -> list[float]:
 
 def line_breaks(text: str) -> str:
     """MTEXT marks a line break with the code \\P."""
-    return text.replace("\r\n", "\n").replace("\n", "\\P")
+    return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\P")
+
+
+def has_line_break(text: str) -> bool:
+    return "\n" in text or "\r" in text
+
+
+def one_line_values(values: dict[str, str]) -> dict[str, str]:
+    """An attribute holds one line, and a raw line break would go in unconverted."""
+    for tag, value in values.items():
+        if has_line_break(value):
+            raise ValueError(f"attribute {tag} holds one line")
+    return values
 
 
 class Strict(BaseModel):
@@ -37,6 +49,8 @@ class Scale(Strict):
 class AttributeUpdate(Strict):
     handle: str
     values: Annotated[dict[str, str], Field(min_length=1)]
+
+    _one_line = field_validator("values")(one_line_values)
 
 
 Point2D = Annotated[list[Number], Field(min_length=2, max_length=2)]
@@ -108,7 +122,7 @@ class Text(Shape):
     @field_validator("text")
     @classmethod
     def one_line(cls, value: str) -> str:
-        if "\n" in value or "\r" in value:
+        if has_line_break(value):
             raise ValueError("text holds one line, use mtext for line breaks")
         return value
 
@@ -168,6 +182,8 @@ class Insert(Shape):
     scale: Positive = 1.0
     rotation: Number = 0.0
     attributes: dict[str, str] = Field(default_factory=dict)
+
+    _one_line = field_validator("attributes")(one_line_values)
 
     @field_validator("block")
     @classmethod

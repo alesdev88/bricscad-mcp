@@ -4,7 +4,7 @@ import pytest
 
 from bricscad_mcp.errors import LispError
 from bricscad_mcp.tools import edit, read
-from real.helpers import define_block_with_attribute_definitions, dxf_value, entity_count
+from real.helpers import define_block_with_attribute_definitions, dxf_value, entity_count, locked_line
 
 pytestmark = pytest.mark.bricscad
 
@@ -165,3 +165,16 @@ def test_dimensions_and_hatches_land_on_the_layout(real_session, blank, item):
     edit.set_layer(real_session.bridge, "A")
     created = make(real_session, {**item, "layer": "A"}, layout="Layout1")["created"][0]
     assert created["layout"] == "Layout1" and created["layer"] == "A"
+
+
+def test_a_hatch_on_a_locked_layer_is_refused(real_session, blank):
+    locked_line(real_session)
+    with pytest.raises(LispError, match="LK.*locked"):
+        make(real_session, {"type": "hatch", "points": [[0, 0], [1, 0], [1, 1]], "layer": "LK"})
+    assert entity_count(real_session) == 1
+
+
+def test_numbers_in_exponent_form_reach_bricscad(real_session, blank):
+    handle = make(real_session, {"type": "line", "start": [1e-05, 6.123e-17], "end": [1e16, 2.5]})["created"][0]["handle"]
+    assert dxf_value(real_session, handle, 10) == pytest.approx([1e-05, 0.0, 0.0], abs=1e-9)  # replies round tiny values
+    assert dxf_value(real_session, handle, 11)[0] == pytest.approx(1e16)

@@ -103,3 +103,17 @@ def test_modify_is_one_undo_step(real_session, blank):
     edit.modify_entities(real_session.bridge, [handle], layer="A", move=[3, 0])
     assert edit.undo(real_session.bridge)["undone"] == 1
     assert dxf_value(real_session, handle, 8) == "0" and dxf_value(real_session, handle, 10) == [0.0, 0.0, 0.0]
+
+
+def test_a_literal_backslash_p_is_not_a_line_break(real_session, blank):
+    handle = text_at(real_session, 0, 0, "old")
+    edit.modify_entities(real_session.bridge, [handle], text="C:\\Projects\\A")
+    assert dxf_value(real_session, handle, 1) == "C:\\Projects\\A"
+
+
+def test_a_linetype_can_go_back_to_by_layer(real_session, blank):
+    handle = line_at(real_session, 0, 0)
+    edit.modify_entities(real_session.bridge, [handle], linetype="CENTER")
+    assert dxf_value(real_session, handle, 6) == "CENTER"
+    edit.modify_entities(real_session.bridge, [handle], linetype="ByLayer")
+    assert real_session.bridge.send(f'(cdr (assoc 6 (entget (handent "{handle}"))))') in (None, "ByLayer", "BYLAYER")

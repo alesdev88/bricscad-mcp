@@ -1,6 +1,11 @@
+import re
 import sys
+from collections import Counter
+from pathlib import Path
 
 import pytest
+
+import bricscad_mcp
 
 from bricscad_mcp.errors import BricsCADError
 from bricscad_mcp.tools import edit
@@ -69,7 +74,7 @@ async def test_modify_sends_rotation_in_radians(started, fake):
         "bricscad_modify_entities", {"handles": ["1A"], "rotate": {"angle": 180, "base": [1, 2]}}
     )
     assert fake.requests[-1] == (
-        '(mcp:modify-entities (list "1A") nil (list 3.141592653589793 (list 1.0 2.0 0.0)) nil nil nil nil nil)'
+        '(mcp:modify-entities (list "1A") nil (list 3.141592653589793 (list 1.0 2.0 0.0)) nil nil nil nil nil nil)'
     )
 
 
@@ -227,8 +232,8 @@ async def test_a_symlink_to_the_read_only_file_is_the_same_file(started, fake, t
 
 async def test_a_new_file_goes_through(started, fake, tmp_path):
     fake.responses["mcp:save-state"] = state()
-    fake.responses["mcp:save-as"] = SAVED
     target = tmp_path / "Načrt 1.dwg"
+    fake.responses["mcp:save-as"] = {"path": str(target)}
     await started.call_tool("bricscad_save_drawing", {"path": str(target)})
     assert fake.requests[-1] == f'(mcp:save-as "{target.as_posix()}" nil)'
 
@@ -237,6 +242,65 @@ async def test_overwrite_is_passed_on(started, fake, tmp_path):
     target = tmp_path / "a.dwg"
     target.write_bytes(b"AC1032")
     fake.responses["mcp:save-state"] = state()
-    fake.responses["mcp:save-as"] = SAVED
+    fake.responses["mcp:save-as"] = {"path": str(target)}
     await started.call_tool("bricscad_save_drawing", {"path": str(target), "overwrite": True})
     assert fake.requests[-1] == f'(mcp:save-as "{target.as_posix()}" T)'
+
+
+async def test_a_handle_with_leading_zeros_is_the_same_handle(started, fake):
+    fake.responses["mcp:erase-entities"] = {"erased": 1}
+    await started.call_tool("bricscad_erase_entities", {"handles": ["1A", "01A", "001a"]})
+    assert fake.requests[-1] == '(mcp:erase-entities (list "1A"))'
+
+
+@pytest.mark.parametrize("value", ["a\nb", "a\rb"])
+async def test_attribute_values_hold_one_line(started, fake, value):
+    await refused(started, fake, "bricscad_set_attributes", {"updates": [{"handle": "1A", "values": {"T": value}}]})
+    await refused(
+        started, fake, "bricscad_create_entities",
+        {"entities": [{"type": "insert", "block": "B", "position": [0, 0], "attributes": {"T": value}}]},
+    )
+
+
+async def test_modify_flags_a_line_break_and_converts_a_lone_return(started, fake):
+    fake.responses["mcp:modify-entities"] = {"modified": 1}
+    await started.call_tool("bricscad_modify_entities", {"handles": ["1A"], "text": "a\rb"})
+    assert fake.requests[-1].endswith('nil nil nil "a\\\\Pb" T)')
+
+
+async def test_modify_does_not_flag_a_literal_backslash_p(started, fake):
+    fake.responses["mcp:modify-entities"] = {"modified": 1}
+    await started.call_tool("bricscad_modify_entities", {"handles": ["1A"], "text": "C:\\Projects"})
+    assert fake.requests[-1].endswith('"C:\\\\Projects" nil)')
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a backslash is a separator on Windows")
+async def test_a_backslash_in_a_save_path_is_refused(started, fake, tmp_path):
+    fake.responses["mcp:save-state"] = state()
+    await save_refused(started, fake, {"path": f"{tmp_path}/x\\a.dwg", "overwrite": True}, "backslash")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX permissions")
+async def test_saving_in_place_refuses_a_file_that_is_not_writable(started, fake, tmp_path):
+    current = tmp_path / "a.dwg"
+    current.write_bytes(b"AC1032")
+    current.chmod(0o444)
+    fake.responses["mcp:save-state"] = state(current)
+    await save_refused(started, fake, {"overwrite": True}, "not writable")
+
+
+async def test_a_save_that_landed_elsewhere_is_an_error(started, fake, tmp_path):
+    fake.responses["mcp:save-state"] = state()
+    fake.responses["mcp:save-as"] = {"path": "/somewhere/else/a.dwg"}
+    result = await started.call_tool("bricscad_save_drawing", {"path": str(tmp_path / "a.dwg")})
+    assert result.is_error and "did not save" in result.content[0].text
+
+
+def test_no_lisp_function_is_defined_twice():
+    folder = Path(bricscad_mcp.__file__).parent / "lisp"
+    names = Counter(
+        name
+        for path in folder.glob("*.lsp")
+        for name in re.findall(r"^\(defun (\S+)", path.read_text(encoding="utf8"), re.MULTILINE)
+    )
+    assert [name for name, count in names.items() if count > 1] == []

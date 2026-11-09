@@ -68,3 +68,9 @@ def test_undo_removes_a_new_layer(real_session, blank):
     edit.set_layer(real_session.bridge, "A")
     edit.undo(real_session.bridge)
     assert not layer_exists(real_session, "A")
+
+
+def test_renaming_a_missing_layer_makes_nothing(real_session, blank):
+    with pytest.raises(LispError, match="Typo.*does not exist"):
+        edit.set_layer(real_session.bridge, "Typo", new_name="New")
+    assert not layer_exists(real_session, "Typo") and not layer_exists(real_session, "New")

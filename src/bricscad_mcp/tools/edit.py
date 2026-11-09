@@ -14,7 +14,7 @@ from ..lispgen import call
 from ..server import mcp
 from . import CHANGES_STATE, DESTRUCTIVE, MAX_LIMIT
 from .read import _run
-from .shapes import AttributeUpdate, Entity, Point, Rotate, Scale, line_breaks, point3
+from .shapes import AttributeUpdate, Entity, Point, Rotate, Scale, has_line_break, line_breaks, point3
 
 MAX_UNDO_STEPS = 100
 _HANDLE = re.compile(r"[0-9A-F]+")
@@ -40,14 +40,16 @@ async def bricscad_undo(steps: int = 1, timeout: float = 30.0) -> dict[str, Any]
 
 def check_handles(handles: list[str]) -> list[str]:
     """Uppercase the handles and drop repeats, keeping their order."""
-    cleaned = list(dict.fromkeys(handle.strip().upper() for handle in handles))
-    if not cleaned:
+    if not handles:
         raise BricsCADError("No handles given.")
-    if len(cleaned) > MAX_LIMIT:
-        raise BricsCADError(f"At most {MAX_LIMIT} handles per call.")
-    for handle in cleaned:
+    upper = [handle.strip().upper() for handle in handles]
+    for handle in upper:
         if not _HANDLE.fullmatch(handle):
             raise BricsCADError(f"Not an entity handle: {handle!r}")
+    # 1A and 01A are one entity, and erasing it twice would restore it.
+    cleaned = list(dict.fromkeys(handle.lstrip("0") or "0" for handle in upper))
+    if len(cleaned) > MAX_LIMIT:
+        raise BricsCADError(f"At most {MAX_LIMIT} handles per call.")
     return cleaned
 
 
@@ -151,7 +153,10 @@ def modify_entities(
         scale_wire = [resize.factor, point3(resize.base)]
     text_wire = None if text is None else line_breaks(text)
     return bridge.send(
-        call("mcp:modify-entities", cleaned, move_wire, rotate_wire, scale_wire, layer, color, linetype, text_wire),
+        call(
+            "mcp:modify-entities", cleaned, move_wire, rotate_wire, scale_wire, layer, color, linetype, text_wire,
+            text is not None and has_line_break(text),
+        ),
         timeout,
     )
 
@@ -176,6 +181,8 @@ async def bricscad_modify_entities(
     layer: an existing layer. color: 0 by block, 1 to 255, or 256 by layer.
     linetype: loaded from iso.lin if the drawing does not have it yet.
     text: new text for TEXT, MTEXT or MULTILEADER. Change attributes with bricscad_set_attributes.
+    MTEXT and MULTILEADER text takes format codes, where \\P is a line break. Write a literal
+    backslash or brace as \\\\, \\{ or \\}.
     """
     return await _run(modify_entities, handles, move, rotate, scale, layer, color, linetype, text, timeout)
 
@@ -223,6 +230,8 @@ async def bricscad_create_entities(
     entities: up to 2000 items, each with a type and an optional layer, which must exist.
     Points are [x, y] or [x, y, z]. Angles are degrees.
     layout: a sheet name. The default is the model, whichever tab is current.
+    MTEXT takes format codes, where \\P is a line break. Write a literal backslash or brace as
+    \\\\, \\{ or \\}.
     """
     return await _run(create_entities, entities, layout, timeout)
 
@@ -260,15 +269,23 @@ def save_drawing(
 ) -> dict[str, Any]:
     state = bridge.send(call("mcp:save-state"))
     if path is not None:
+        if os.name != "nt" and "\\" in path:
+            # Python sees one odd file name, and BricsCAD might see a folder, so no check would hold.
+            raise BricsCADError(f"A save path cannot hold a backslash here: {path}")
         target = Path(path).expanduser().absolute()
         _check_save_target(target, state, overwrite)
-        return bridge.send(call("mcp:save-as", target.as_posix(), overwrite), timeout)
+        info = bridge.send(call("mcp:save-as", target.as_posix(), overwrite), timeout)
+        if not _is_same_file(info["path"], target):
+            raise BricsCADError(f"BricsCAD did not save to {target}. It reports {info['path']}.")
+        return info
     if not state["titled"]:
         raise BricsCADError("This drawing has no file yet. Give a path to save it to.")
     if state["read_only"]:
         raise SafetyRefused("This drawing is read-only, so it must be saved to a new path.")
     if not overwrite:
         raise SafetyRefused("Saving replaces the open file. Pass overwrite=true to do that, or give a new path.")
+    if Path(state["path"]).exists() and not os.access(state["path"], os.W_OK):
+        raise SafetyRefused(f"{state['path']} is not writable, so it was left alone.")
     return bridge.send(call("mcp:qsave"), timeout)
 
 
