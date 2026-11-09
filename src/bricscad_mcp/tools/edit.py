@@ -12,6 +12,7 @@ from .read import _run
 
 MAX_UNDO_STEPS = 100
 _HANDLE = re.compile(r"[0-9A-F]+")
+_LAYER_NAME_FORBIDDEN = set('<>/\\":;?*|,=`')
 
 
 def undo(bridge: Bridge, steps: int = 1, timeout: float = 30.0) -> dict[str, Any]:
@@ -55,3 +56,55 @@ async def bricscad_erase_entities(handles: list[str], timeout: float = 30.0) -> 
     Refuses entities on locked layers and attributes, which belong to their block insert.
     """
     return await _run(erase_entities, handles, timeout)
+
+
+def _check_layer_name(name: str) -> None:
+    if not name or _LAYER_NAME_FORBIDDEN.intersection(name):
+        raise BricsCADError(f"Not a valid layer name: {name!r}. It cannot be empty or hold any of < > / \\ \" : ; ? * | , = `")
+
+
+def _switch(value: bool | None) -> int | None:
+    """LISP has no false: nil means leave it alone, so a switch goes as nil, 0 or 1."""
+    return None if value is None else int(value)
+
+
+def set_layer(
+    bridge: Bridge,
+    name: str,
+    new_name: str | None = None,
+    color: int | None = None,
+    linetype: str | None = None,
+    on: bool | None = None,
+    frozen: bool | None = None,
+    locked: bool | None = None,
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    _check_layer_name(name)
+    if new_name is not None:
+        _check_layer_name(new_name)
+    if color is not None and not 1 <= color <= 255:
+        raise BricsCADError("color must be a color number from 1 to 255.")
+    return bridge.send(
+        call("mcp:set-layer", name, new_name, color, linetype, _switch(on), _switch(frozen), _switch(locked)), timeout
+    )
+
+
+@mcp.tool(annotations=DESTRUCTIVE)
+async def bricscad_set_layer(
+    name: str,
+    new_name: str | None = None,
+    color: int | None = None,
+    linetype: str | None = None,
+    on: bool | None = None,
+    frozen: bool | None = None,
+    locked: bool | None = None,
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    """Create a layer, or change one that exists. Only the values you give are changed.
+
+    new_name: rename the layer. Layers 0 and Defpoints cannot be renamed.
+    color: a color number from 1 to 255.
+    linetype: loaded from iso.lin if the drawing does not have it yet.
+    on, frozen, locked: true or false. The current layer cannot be frozen.
+    """
+    return await _run(set_layer, name, new_name, color, linetype, on, frozen, locked, timeout)

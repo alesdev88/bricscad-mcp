@@ -78,3 +78,72 @@
 (defun mcp:erase-entities (handles)
   (mcp:edit 'mcp:erase-entities-now (list handles))
 )
+
+;; ---- Layers ----
+
+;; entmake would create a missing layer without saying so.
+(defun mcp:require-layer (name)
+  (if (tblsearch "LAYER" name)
+    name
+    (mcp:fail (strcat "Layer " name " does not exist. Create it with bricscad_set_layer."))
+  )
+)
+
+(defun mcp:ensure-linetype (name / loaded)
+  (if (not (tblsearch "LTYPE" name))
+    (progn
+      (setq loaded
+        (vl-catch-all-apply 'vla-load (list (vla-get-linetypes (mcp:active-document)) name "iso.lin")))
+      (if (vl-catch-all-error-p loaded)
+        (mcp:fail (strcat "Linetype " name " is not in this drawing or in iso.lin."))
+      )
+    )
+  )
+)
+
+(defun mcp:same-name-p (first second)
+  (= (strcase first) (strcase second))
+)
+
+(defun mcp:switch-value (switch)
+  (if (= switch 1) :vlax-true :vlax-false)
+)
+
+(defun mcp:rename-layer (layer name new-name)
+  (if (member (strcase name) '("0" "DEFPOINTS"))
+    (mcp:fail (strcat "Layer " name " cannot be renamed."))
+  )
+  (if (and (tblsearch "LAYER" new-name) (not (mcp:same-name-p name new-name)))
+    (mcp:fail (strcat "A layer named " new-name " already exists."))
+  )
+  (vla-put-name layer new-name)
+)
+
+(defun mcp:set-layer-now (name new-name color linetype on frozen locked / created layer)
+  (setq created (null (tblsearch "LAYER" name))
+        layer (vla-add (vla-get-layers (mcp:active-document)) name))
+  (if color (vla-put-color layer color))
+  (if linetype
+    (progn
+      (mcp:ensure-linetype linetype)
+      (vla-put-linetype layer linetype)
+    )
+  )
+  (if on (vla-put-layeron layer (mcp:switch-value on)))
+  (if (and (= frozen 1) (mcp:same-name-p name (getvar "CLAYER")))
+    (mcp:fail (strcat "Layer " name " is the current layer and cannot be frozen."))
+  )
+  (if frozen (vla-put-freeze layer (mcp:switch-value frozen)))
+  (if locked (vla-put-lock layer (mcp:switch-value locked)))
+  (if new-name (mcp:rename-layer layer name new-name))
+  (mcp:obj
+    (list
+      (cons "layer" (mcp:layer-item (tblsearch "LAYER" (if new-name new-name name))))
+      (cons "created" (mcp:bool created))
+    )
+  )
+)
+
+(defun mcp:set-layer (name new-name color linetype on frozen locked)
+  (mcp:edit 'mcp:set-layer-now (list name new-name color linetype on frozen locked))
+)
