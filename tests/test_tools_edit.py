@@ -56,3 +56,27 @@ async def test_set_layer_refuses_a_bad_new_name(started, fake):
 @pytest.mark.parametrize("color", [0, 256])
 async def test_set_layer_refuses_a_bad_color(started, fake, color):
     await refused(started, fake, "bricscad_set_layer", {"name": "A", "color": color})
+
+
+async def test_modify_sends_rotation_in_radians(started, fake):
+    fake.responses["mcp:modify-entities"] = {"modified": 1}
+    await started.call_tool(
+        "bricscad_modify_entities", {"handles": ["1A"], "rotate": {"angle": 180, "base": [1, 2]}}
+    )
+    assert fake.requests[-1] == (
+        '(mcp:modify-entities (list "1A") nil (list 3.141592653589793 (list 1.0 2.0 0.0)) nil nil nil nil nil)'
+    )
+
+
+async def test_modify_turns_line_breaks_into_mtext_codes(started, fake):
+    fake.responses["mcp:modify-entities"] = {"modified": 1}
+    await started.call_tool("bricscad_modify_entities", {"handles": ["1A"], "text": "a\nb"})
+    assert '"a\\\\Pb"' in fake.requests[-1]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{}, {"scale": {"factor": 0, "base": [0, 0]}}, {"move": [1]}, {"color": -1}, {"color": 257}],
+)
+async def test_modify_refuses_bad_changes(started, fake, change):
+    await refused(started, fake, "bricscad_modify_entities", {"handles": ["1A"], **change})

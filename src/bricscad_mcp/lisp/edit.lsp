@@ -147,3 +147,36 @@
 (defun mcp:set-layer (name new-name color linetype on frozen locked)
   (mcp:edit 'mcp:set-layer-now (list name new-name color linetype on frozen locked))
 )
+
+;; ---- Modify ----
+
+(defun mcp:set-entity-text (object kind text)
+  (if (not (vlax-property-available-p object 'TextString))
+    (mcp:fail (strcat kind " has no text."))
+  )
+  (if (and (= kind "TEXT") (vl-string-search "\\P" text))
+    (mcp:fail "TEXT holds one line. Use MTEXT for line breaks.")
+  )
+  (vla-put-textstring object text)
+)
+
+(defun mcp:modify-entities-now (handles move rotate scale layer color linetype text / targets object)
+  (setq targets (mcp:edit-targets handles))
+  (if layer (mcp:require-layer layer))
+  (if linetype (mcp:ensure-linetype linetype))
+  (foreach entity targets
+    (setq object (vlax-ename->vla-object entity))
+    (if layer (vla-put-layer object layer))
+    (if color (vla-put-color object color))
+    (if linetype (vla-put-linetype object linetype))
+    (if text (mcp:set-entity-text object (mcp:group 0 (entget entity)) text))
+    (if move (vla-move object (vlax-3d-point '(0.0 0.0 0.0)) (vlax-3d-point move)))
+    (if rotate (vla-rotate object (vlax-3d-point (cadr rotate)) (car rotate)))
+    (if scale (vla-scaleentity object (vlax-3d-point (cadr scale)) (car scale)))
+  )
+  (mcp:obj (list (cons "modified" (length targets))))
+)
+
+(defun mcp:modify-entities (handles move rotate scale layer color linetype text)
+  (mcp:edit 'mcp:modify-entities-now (list handles move rotate scale layer color linetype text))
+)

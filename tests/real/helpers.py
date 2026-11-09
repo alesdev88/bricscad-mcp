@@ -115,3 +115,15 @@ def locked_line(session):
     return session.bridge.send(
         "(entmakex (list '(0 . \"LINE\") '(8 . \"LK\") '(10 0.0 0.0 0.0) '(11 1.0 1.0 0.0)))"
     )
+
+
+def circle_at(session, x, y, radius=1.0):
+    return session.bridge.send(
+        f"(entmakex (list '(0 . \"CIRCLE\") '(10 {float(x)} {float(y)} 0.0) '(40 . {float(radius)})))"
+    )
+
+
+def text_at(session, x, y, value):
+    return session.bridge.send(
+        f"(entmakex (list '(0 . \"TEXT\") '(10 {float(x)} {float(y)} 0.0) '(40 . 1.0) (cons 1 {lisp_value(value)})))"
+    )
