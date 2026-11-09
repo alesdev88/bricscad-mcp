@@ -3,6 +3,7 @@
 import time
 
 from bricscad_mcp.lispgen import call, lisp_path, lisp_value
+from bricscad_mcp.tools import read
 
 
 def wait_until(condition, timeout=10.0):
@@ -94,3 +95,12 @@ def make_dwg(session, path, lines=1):
 
 def add_line(session):
     return session.bridge.send("(entmakex (list '(0 . \"LINE\") '(10 0.0 0.0 0.0) '(11 100.0 100.0 0.0)))")
+
+
+def entity_count(session):
+    return session.bridge.send('(mcp:count-selection (ssget "_X"))')
+
+
+def dxf_value(session, handle, code):
+    """The first value of a DXF group on an entity."""
+    return next(value for group, value in read.get_entity(session.bridge, handle)["dxf"] if group == code)
