@@ -104,3 +104,14 @@ def entity_count(session):
 def dxf_value(session, handle, code):
     """The first value of a DXF group on an entity."""
     return next(value for group, value in read.get_entity(session.bridge, handle)["dxf"] if group == code)
+
+
+def locked_line(session):
+    """Draw a line from the origin on a locked layer LK and return its handle."""
+    session.bridge.send(
+        "(entmakex (list '(0 . \"LAYER\") '(100 . \"AcDbSymbolTableRecord\") '(100 . \"AcDbLayerTableRecord\") "
+        "'(2 . \"LK\") '(70 . 4) '(62 . 1) '(6 . \"Continuous\")))"
+    )
+    return session.bridge.send(
+        "(entmakex (list '(0 . \"LINE\") '(8 . \"LK\") '(10 0.0 0.0 0.0) '(11 1.0 1.0 0.0)))"
+    )
