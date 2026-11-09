@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 from bricscad_mcp.errors import BricsCADError
@@ -130,3 +132,111 @@ async def test_create_refuses_bad_items(started, fake, entities):
 def test_create_refuses_a_point_that_is_not_finite():
     with pytest.raises(BricsCADError):
         edit.create_entities(None, [{"type": "line", "start": [float("nan"), 0], "end": [1, 1]}])
+
+
+SAVED = {"name": "x.dwg"}
+
+
+def state(path="/nowhere/current.dwg", titled=1, read_only=False, other_open=()):
+    return {"path": str(path), "titled": titled, "read_only": read_only, "other_open": [str(p) for p in other_open]}
+
+
+async def save_refused(client, fake, arguments, match):
+    result = await client.call_tool("bricscad_save_drawing", arguments)
+    assert result.is_error and match in result.content[0].text
+    assert not any("mcp:save-as" in request or "mcp:qsave" in request for request in fake.requests)
+
+
+async def test_save_an_unnamed_drawing_needs_a_path(started, fake):
+    fake.responses["mcp:save-state"] = state(titled=0)
+    await save_refused(started, fake, {"overwrite": True}, "path")
+
+
+async def test_a_read_only_drawing_cannot_be_saved_in_place(started, fake):
+    fake.responses["mcp:save-state"] = state(read_only=True)
+    await save_refused(started, fake, {"overwrite": True}, "new path")
+
+
+async def test_saving_in_place_needs_overwrite(started, fake):
+    fake.responses["mcp:save-state"] = state()
+    await save_refused(started, fake, {}, "overwrite=true")
+
+
+async def test_saving_in_place_with_overwrite_goes_through(started, fake):
+    fake.responses["mcp:save-state"] = state()
+    fake.responses["mcp:qsave"] = SAVED
+    await started.call_tool("bricscad_save_drawing", {"overwrite": True})
+    assert fake.requests[-1] == "(mcp:qsave)"
+
+
+async def test_only_dwg_files_are_saved(started, fake, tmp_path):
+    fake.responses["mcp:save-state"] = state()
+    await save_refused(started, fake, {"path": str(tmp_path / "x.dxf")}, "bricscad_export_dxf")
+
+
+async def test_the_target_cannot_be_a_folder(started, fake, tmp_path):
+    fake.responses["mcp:save-state"] = state()
+    (tmp_path / "x.dwg").mkdir()
+    await save_refused(started, fake, {"path": str(tmp_path / "x.dwg")}, "folder")
+
+
+async def test_the_target_folder_must_exist(started, fake, tmp_path):
+    fake.responses["mcp:save-state"] = state()
+    await save_refused(started, fake, {"path": str(tmp_path / "missing" / "x.dwg")}, "folder")
+
+
+async def test_a_read_only_drawing_cannot_be_saved_over_its_own_file(started, fake, tmp_path):
+    current = tmp_path / "a.dwg"
+    current.write_bytes(b"AC1032")
+    fake.responses["mcp:save-state"] = state(current, read_only=True)
+    await save_refused(started, fake, {"path": str(current), "overwrite": True}, "new path")
+
+
+async def test_a_file_open_as_another_drawing_is_refused(started, fake, tmp_path):
+    other = tmp_path / "a.dwg"
+    other.write_bytes(b"AC1032")
+    fake.responses["mcp:save-state"] = state(other_open=[other])
+    await save_refused(started, fake, {"path": str(other), "overwrite": True}, "open as another drawing")
+
+
+async def test_an_existing_file_needs_overwrite(started, fake, tmp_path):
+    target = tmp_path / "a.dwg"
+    target.write_bytes(b"AC1032")
+    fake.responses["mcp:save-state"] = state()
+    await save_refused(started, fake, {"path": str(target)}, "overwrite=true")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX permissions")
+async def test_a_file_that_is_not_writable_is_refused(started, fake, tmp_path):
+    target = tmp_path / "a.dwg"
+    target.write_bytes(b"AC1032")
+    target.chmod(0o444)
+    fake.responses["mcp:save-state"] = state()
+    await save_refused(started, fake, {"path": str(target), "overwrite": True}, "not writable")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges")
+async def test_a_symlink_to_the_read_only_file_is_the_same_file(started, fake, tmp_path):
+    real = tmp_path / "a.dwg"
+    real.write_bytes(b"AC1032")
+    link = tmp_path / "b.dwg"
+    link.symlink_to(real)
+    fake.responses["mcp:save-state"] = state(real, read_only=True)
+    await save_refused(started, fake, {"path": str(link), "overwrite": True}, "new path")
+
+
+async def test_a_new_file_goes_through(started, fake, tmp_path):
+    fake.responses["mcp:save-state"] = state()
+    fake.responses["mcp:save-as"] = SAVED
+    target = tmp_path / "Načrt 1.dwg"
+    await started.call_tool("bricscad_save_drawing", {"path": str(target)})
+    assert fake.requests[-1] == f'(mcp:save-as "{target.as_posix()}" nil)'
+
+
+async def test_overwrite_is_passed_on(started, fake, tmp_path):
+    target = tmp_path / "a.dwg"
+    target.write_bytes(b"AC1032")
+    fake.responses["mcp:save-state"] = state()
+    fake.responses["mcp:save-as"] = SAVED
+    await started.call_tool("bricscad_save_drawing", {"path": str(target), "overwrite": True})
+    assert fake.requests[-1] == f'(mcp:save-as "{target.as_posix()}" T)'

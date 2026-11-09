@@ -1,13 +1,15 @@
 """Drawing and editing. Each edit tool call is one all-or-nothing undo step."""
 
 import math
+import os
 import re
+from pathlib import Path
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
 from ..bridge import Bridge
-from ..errors import BricsCADError
+from ..errors import BricsCADError, SafetyRefused
 from ..lispgen import call
 from ..server import mcp
 from . import CHANGES_STATE, DESTRUCTIVE, MAX_LIMIT
@@ -223,3 +225,63 @@ async def bricscad_create_entities(
     layout: a sheet name. The default is the model, whichever tab is current.
     """
     return await _run(create_entities, entities, layout, timeout)
+
+
+def _is_same_file(known: str, target: Path) -> bool:
+    """True however the two are spelled: through a link, in another letter case or Unicode form."""
+    other = Path(known)
+    if other.exists() and target.exists():
+        return os.path.samefile(other, target)
+    return other.absolute() == target
+
+
+def _check_save_target(target: Path, state: dict[str, Any], overwrite: bool) -> None:
+    if target.suffix.lower() != ".dwg":
+        raise BricsCADError(
+            f"Only .dwg files can be saved here: {target}. DXF export comes with bricscad_export_dxf in Phase 3."
+        )
+    if target.is_dir():
+        raise BricsCADError(f"This is a folder, not a file: {target}")
+    if not target.parent.is_dir():
+        raise BricsCADError(f"The folder does not exist: {target.parent}")
+    if state["titled"] and state["read_only"] and _is_same_file(state["path"], target):
+        raise SafetyRefused("This drawing is read-only, so it must be saved to a new path.")
+    if any(Path(path).is_absolute() and _is_same_file(path, target) for path in state["other_open"]):
+        raise SafetyRefused(f"{target} is open as another drawing. Close it first.")
+    if target.exists():
+        if not overwrite:
+            raise SafetyRefused(f"{target} already exists. Pass overwrite=true to replace it.")
+        if not os.access(target, os.W_OK):
+            raise SafetyRefused(f"{target} is not writable, so it was left alone.")
+
+
+def save_drawing(
+    bridge: Bridge, path: str | None = None, overwrite: bool = False, timeout: float = 120.0
+) -> dict[str, Any]:
+    state = bridge.send(call("mcp:save-state"))
+    if path is not None:
+        target = Path(path).expanduser().absolute()
+        _check_save_target(target, state, overwrite)
+        return bridge.send(call("mcp:save-as", target.as_posix(), overwrite), timeout)
+    if not state["titled"]:
+        raise BricsCADError("This drawing has no file yet. Give a path to save it to.")
+    if state["read_only"]:
+        raise SafetyRefused("This drawing is read-only, so it must be saved to a new path.")
+    if not overwrite:
+        raise SafetyRefused("Saving replaces the open file. Pass overwrite=true to do that, or give a new path.")
+    return bridge.send(call("mcp:qsave"), timeout)
+
+
+@mcp.tool(annotations=DESTRUCTIVE)
+async def bricscad_save_drawing(
+    path: str | None = None, overwrite: bool = False, timeout: float = 120.0
+) -> dict[str, Any]:
+    """Save the current drawing. Returns the same details as bricscad_drawing_info.
+
+    path: a new .dwg path. The drawing then continues under that name, and is no longer read-only.
+    Leave it out to save over the open file, which needs overwrite=true.
+    overwrite: true allows replacing an existing file. BricsCAD leaves a .bak beside it.
+    A read-only drawing cannot be saved over its own file, and a file open as another drawing
+    cannot be replaced.
+    """
+    return await _run(save_drawing, path, overwrite, timeout)

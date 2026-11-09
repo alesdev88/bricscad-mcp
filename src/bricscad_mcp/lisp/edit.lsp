@@ -405,3 +405,55 @@
 (defun mcp:create-entities (layout items)
   (mcp:edit 'mcp:create-entities-now (list layout items))
 )
+
+;; ---- Save ----
+
+(defun mcp:other-open-paths (/ active out)
+  (setq active (mcp:active-document))
+  (vlax-for document (mcp:documents)
+    (if (not (equal document active))
+      (setq out (cons (vla-get-fullname document) out))
+    )
+  )
+  out
+)
+
+(defun mcp:save-state ()
+  (mcp:obj
+    (list
+      (cons "path" (strcat (getvar "DWGPREFIX") (getvar "DWGNAME")))
+      (cons "titled" (getvar "DWGTITLED"))
+      (cons "read_only" (mcp:bool (vla-get-readonly (mcp:active-document))))
+      (cons "other_open" (mcp:arr (mcp:other-open-paths)))
+    )
+  )
+)
+
+;; Only an existing target makes _.SAVEAS ask. A folder that is missing makes it do nothing and
+;; say nothing, so the new name is checked. The name, not the path: BricsCAD may resolve links.
+(defun mcp:save-as (path overwrite)
+  (command "_.SAVEAS" "" path)
+  (if (> (getvar "CMDACTIVE") 0)
+    (if overwrite
+      (command "_Y")
+      (progn
+        (mcp:cancel-command)
+        (mcp:fail (strcat path " already exists."))
+      )
+    )
+  )
+  (if (not (and (findfile path)
+                (mcp:same-name-p (getvar "DWGNAME")
+                                 (strcat (vl-filename-base path) (vl-filename-extension path)))))
+    (mcp:fail (strcat "BricsCAD did not save to " path "."))
+  )
+  (mcp:drawing-info)
+)
+
+(defun mcp:qsave ()
+  (command "_.QSAVE")
+  (if (= (vla-get-saved (mcp:active-document)) :vlax-false)
+    (mcp:fail "BricsCAD did not save the drawing.")
+  )
+  (mcp:drawing-info)
+)
