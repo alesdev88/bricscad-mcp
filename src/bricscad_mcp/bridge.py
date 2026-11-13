@@ -17,6 +17,9 @@ from .errors import BridgeTimeout, LispError, ProcessDied
 
 ENCODING = "utf-8"
 
+# Requests are always UTF-8: BricsCAD converts them on load. Replies come back in LISP's own
+# text encoding, which is UTF-8 only where LISP supports Unicode. See Session for the check.
+
 
 class Bridge:
     def __init__(
@@ -29,6 +32,7 @@ class Bridge:
         self._alive_check = alive_check
         self._poll_interval = poll_interval
         self._lock = threading.Lock()
+        self.reply_encoding = ENCODING
 
     def send(self, expr: str, timeout: float = 30.0) -> Any:
         """Run a LISP expression in BricsCAD and return its result."""
@@ -62,7 +66,11 @@ class Bridge:
         deadline = time.monotonic() + timeout
         while True:
             if reply.exists():
-                return self._read_reply(request_id, reply)
+                try:
+                    return self._read_reply(request_id, reply)
+                except PermissionError:
+                    # Windows can keep a new file locked for a moment. Try again until the deadline.
+                    pass
             if not self._alive_check():
                 request.unlink(missing_ok=True)
                 self._raise_if_dead()
@@ -72,8 +80,8 @@ class Bridge:
             time.sleep(self._poll_interval)
 
     def _read_reply(self, request_id: str, reply: Path) -> Any:
-        text = reply.read_text(encoding=ENCODING, errors="replace")
-        reply.unlink(missing_ok=True)
+        text = reply.read_text(encoding=self.reply_encoding, errors="replace")
+        _remove(reply)
         try:
             data = json.loads(text)
             if data["id"] != request_id:
@@ -87,7 +95,7 @@ class Bridge:
     def _discard_old_replies(self) -> None:
         # Anything here belongs to a request that already timed out.
         for old in self.queue_dir.glob("*.json"):
-            old.unlink(missing_ok=True)
+            _remove(old)
 
     def _raise_if_dead(self) -> None:
         if not self._alive_check():
@@ -101,3 +109,11 @@ class Bridge:
             f"so check the BricsCAD window. {heartbeat} If it had already started this request, "
             "it keeps running and its result is lost, so check the current state before retrying."
         )
+
+
+def _remove(path: Path) -> None:
+    """Delete a reply. One that is still locked is left for the next request to clear."""
+    try:
+        path.unlink(missing_ok=True)
+    except PermissionError:
+        pass

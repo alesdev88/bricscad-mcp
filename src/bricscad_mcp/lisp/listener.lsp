@@ -21,6 +21,10 @@
 (defun mcp:active-document () (vla-get-activedocument (vlax-get-acad-object)))
 (defun mcp:current-drawing () (getvar "DWGNAME"))
 
+;; How this LISP holds text. The code of c-caron is 269 where LISP supports Unicode, and
+;; a single byte where it uses the system code page instead, as on Windows.
+(defun mcp:text-encoding () (list (ascii (chr 269)) (getvar "SYSCODEPAGE")))
+
 (defun mcp:unsaved-count (/ count)
   (setq count 0)
   (vlax-for document (mcp:documents)

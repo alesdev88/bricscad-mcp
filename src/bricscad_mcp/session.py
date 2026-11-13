@@ -1,13 +1,14 @@
 """Starts and stops the one BricsCAD process this server owns."""
 
 import atexit
+import codecs
 import shutil
 import threading
 import time
 import uuid
 from pathlib import Path
 
-from .bridge import Bridge
+from .bridge import ENCODING, Bridge
 from .errors import BricsCADError, BridgeTimeout, NotRunning, ProcessDied, SafetyRefused
 from .lispgen import call, lisp_path, lisp_str
 from .platforms import select_installation
@@ -76,6 +77,7 @@ class Session:
         (folder / "pid").write_text(str(self._pid), encoding="utf-8")
         self._start_alive_thread(bridge)
         self._wait_for_listener(bridge, timeout)
+        bridge.reply_encoding = _lisp_text_encoding(bridge)
         return {"pid": self._pid, "version": self._version, "executable": str(installation.executable)}
 
     def stop(self, discard: bool = False) -> dict:
@@ -188,6 +190,29 @@ def _has_live_process(folder: Path) -> bool:
         return is_alive(int((folder / "pid").read_text(encoding="utf-8")))
     except (OSError, ValueError):
         return False
+
+
+def _lisp_text_encoding(bridge: Bridge) -> str:
+    """Return the encoding LISP writes replies in.
+
+    LISP with Unicode support writes UTF-8. LISP without it, as BricsCAD runs on Windows,
+    holds text in the system code page and writes those bytes unchanged.
+    """
+    try:
+        probe = bridge.send(call("mcp:text-encoding"), timeout=10.0)
+        code, codepage = probe
+    except (BricsCADError, TypeError, ValueError):
+        return ENCODING
+    if not isinstance(code, int) or code > 255:
+        return ENCODING
+    number = str(codepage).upper().removeprefix("ANSI_")
+    if not number.isdigit():
+        return ENCODING
+    try:
+        codecs.lookup(f"cp{number}")
+    except LookupError:
+        return ENCODING
+    return f"cp{number}"
 
 
 def _bootstrap(queue: Path) -> str:

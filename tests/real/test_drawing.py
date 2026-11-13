@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 from bricscad_mcp.errors import SafetyRefused
@@ -31,6 +33,7 @@ def test_open_path_with_slovene_characters_and_spaces(real_session, tmp_path):
     close_drawing(real_session.bridge)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason='Windows does not allow " in file names')
 def test_open_path_with_a_quote(real_session, tmp_path):
     path = make_dwg(real_session, tmp_path / 'a"b.dwg')
     assert open_drawing(real_session.bridge, str(path))["name"] == 'a"b.dwg'
