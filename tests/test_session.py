@@ -43,7 +43,31 @@ def test_bootstrap_loads_the_lisp_and_starts_the_listener(session, fake):
 def test_bootstrap_is_never_seen_as_a_request(session, fake):
     session.start()
     assert fake.started_scripts[0].parent != session.bridge.queue_dir
-    assert fake.requests == []
+    assert not any("mcp:listen" in request for request in fake.requests)
+
+
+@pytest.mark.parametrize(
+    "probe, expected",
+    [
+        ([269, "ANSI_1252"], "utf-8"),  # Unicode LISP, as on macOS
+        ([232, "ANSI_1250"], "cp1250"),  # LISP without Unicode, as on Windows
+        ([232, "ANSI_1252"], "cp1252"),
+        ([63, "ANSI_874"], "cp874"),
+        (None, "utf-8"),  # no answer: keep the default
+        ([232, "UNKNOWN"], "utf-8"),
+    ],
+)
+def test_start_reads_replies_in_the_lisp_text_encoding(session, fake, probe, expected):
+    fake.responses["mcp:text-encoding"] = probe
+    session.start()
+    assert session.bridge.reply_encoding == expected
+    assert fake.requests == ["(mcp:text-encoding)"]
+
+
+def test_start_keeps_utf8_when_the_encoding_check_fails(session, fake):
+    fake.responses["mcp:text-encoding"] = RuntimeError("no such function")
+    session.start()
+    assert session.bridge.reply_encoding == "utf-8"
 
 
 def test_second_start_refuses_while_running(session):

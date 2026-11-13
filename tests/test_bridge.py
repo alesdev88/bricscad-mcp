@@ -1,5 +1,6 @@
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -105,6 +106,63 @@ def test_request_file_is_never_seen_partial(queue):
 def test_non_ascii_round_trip(queue):
     with FakeListener(queue, lambda e: {"ok": True, "result": e}):
         assert Bridge(queue).send("Načrt čšž") == "Načrt čšž"
+
+
+def test_reply_in_the_lisp_code_page_is_decoded(queue):
+    # LISP without Unicode support, as on Windows, writes replies in its own code page.
+    b = Bridge(queue)
+    b.reply_encoding = "cp1250"
+    with FakeListener(queue, lambda e: {"ok": True, "result": e}, encoding="cp1250"):
+        assert b.send("Načrt čšž") == "Načrt čšž"
+
+
+def test_a_locked_reply_is_read_once_it_is_released(queue, monkeypatch):
+    # On Windows a new reply can stay locked for a moment, for example by a virus scanner.
+    real_read_text = Path.read_text
+    refusals = [3]
+
+    def read_text(self, *args, **kwargs):
+        if self.suffix == ".json" and refusals[0]:
+            refusals[0] -= 1
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    with FakeListener(queue, lambda e: {"ok": True, "result": 7}):
+        assert Bridge(queue).send("x", timeout=5) == 7
+    assert refusals == [0]
+
+
+def test_a_reply_that_stays_locked_times_out(queue, monkeypatch):
+    real_read_text = Path.read_text
+
+    def read_text(self, *args, **kwargs):
+        if self.suffix == ".json":
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    with FakeListener(queue, lambda e: {"ok": True, "result": 7}):
+        with pytest.raises(BridgeTimeout):
+            Bridge(queue).send("x", timeout=0.3)
+
+
+def test_a_reply_that_cannot_be_deleted_yet_is_still_returned(queue, monkeypatch):
+    real_unlink = Path.unlink
+    refused = []
+
+    def unlink(self, *args, **kwargs):
+        if self.suffix == ".json" and not refused:
+            refused.append(self.name)
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    b = Bridge(queue)
+    with FakeListener(queue, lambda e: {"ok": True, "result": e}):
+        assert b.send("first") == "first"
+        assert b.send("second") == "second"
+    assert refused and list(queue.glob("*.json")) == []
 
 
 def test_requests_sort_oldest_first(queue):

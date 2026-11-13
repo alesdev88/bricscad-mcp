@@ -9,10 +9,18 @@ from typing import Callable
 
 
 class FakeListener:
-    def __init__(self, queue_dir: Path, handler: Callable[[str], dict], delay: float = 0.0):
+    def __init__(
+        self,
+        queue_dir: Path,
+        handler: Callable[[str], dict],
+        delay: float = 0.0,
+        encoding: str = "utf-8",
+    ):
+        """`encoding` is how replies are written: LISP on Windows writes its own code page."""
         self.queue_dir = Path(queue_dir)
         self.handler = handler
         self.delay = delay
+        self.encoding = encoding
         self.requests: list[str] = []
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -45,6 +53,6 @@ class FakeListener:
         reply = {"id": request.stem, "ok": True, "result": None, "error": None, "elapsed_ms": 0}
         reply.update(self.handler(expr))
         temporary = request.with_suffix(".reply")
-        temporary.write_text(json.dumps(reply, ensure_ascii=False), encoding="utf-8")
+        temporary.write_text(json.dumps(reply, ensure_ascii=False), encoding=self.encoding)
         os.replace(temporary, request.with_suffix(".json"))
         running.unlink()
