@@ -214,6 +214,7 @@ Probed on temporary drawings on V26.1.6 Lite, macOS, before the plot and export 
 |---|---|
 | A truncated or scrambled DWG makes `vla-open` fail with `Automation Error E_FAIL` and no dialog | A damaged file fails on its own and the batch goes on |
 | Opening read-only, drawing, `_.SAVEAS` to another folder and `vla-close` in one request works, also with `č š ž` in the name. The source is unchanged | One request per file; saved copies go through a temporary name |
+| Any use of a document object after that document has closed, even `vla-get-fullname`, ends the BricsCAD process. Closing the active document from LISP is fine, and LISP moves to Drawing1 | A batch remembers the documents open before it opens a file, and afterwards closes whatever is new, never the object it opened |
 
 ## Open points
 

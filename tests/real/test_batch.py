@@ -118,3 +118,38 @@ def test_save_as_job_replaces_sources_only_with_overwrite(real_session, sources)
     assert document_count(real_session) == count
     out = run(real_session, "find_text", folder=str(sources), options={"query": "Soba"})
     assert [f["result"]["total"] for f in out["files"]] == [0, 1, 0]
+
+
+ENTITY_COUNT = '(sslength (ssget "_X"))'
+
+
+def test_lisp_job_returns_a_value_per_file(real_session, sources):
+    out = run(real_session, "lisp", folder=str(sources), options={"code": ENTITY_COUNT})
+    assert [f["result"] for f in out["files"]] == [1, 2, 1]
+
+
+def test_lisp_job_with_save_writes_copies(real_session, sources, tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    before = digests(sources)
+    code = "(entmakex (list (cons 0 \"CIRCLE\") (list 10 0.0 0.0 0.0) (cons 40 1.0)))\n(princ)"
+    saved = run(real_session, "lisp", folder=str(sources), output_folder=str(out), options={"code": code, "save": True})
+    assert saved["succeeded"] == 3 and digests(sources) == before
+    counted = run(real_session, "lisp", folder=str(out), options={"code": ENTITY_COUNT})
+    assert [f["result"] for f in counted["files"]] == [2, 3, 2]
+
+
+@pytest.mark.parametrize("code, status", [
+    ("(+ 1", "failed"),
+    ("(/ 1 0)", "failed"),
+    ('(command "_.LINE")', "ok"),
+    ("(vla-close (mcp:active-document) :vlax-false)", "ok"),
+])
+def test_bad_lisp_leaves_the_session_working(real_session, blank, sources, code, status):
+    count = document_count(real_session)
+    out = run(real_session, "lisp", folder=str(sources), options={"code": code})
+    assert [f["status"] for f in out["files"]] == [status] * 3, out["files"][0]["error"]
+    assert real_session.bridge.send('(getvar "CMDACTIVE")') == 0
+    assert document_count(real_session) == count
+    again = run(real_session, "lisp", folder=str(sources), options={"code": "(+ 1 2)"})
+    assert [f["result"] for f in again["files"]] == [3, 3, 3]

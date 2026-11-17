@@ -3,8 +3,11 @@
 ;; Opens the file read-only, runs one worker in it, and always closes it without saving.
 ;; A damaged file fails vla-open with E_FAIL and no dialog. Another drawing stays open, so
 ;; closing this one never stops the listener.
-(defun mcp:batch-file (path worker args / document result message)
+;; Any use of a document object after it has closed, even reading its name, ends BricsCAD.
+;; The worker may close it, or rename it by saving, so whatever is new afterwards is closed.
+(defun mcp:batch-file (path worker args / before document result message)
   (if (not (wcmatch worker "mcp:*")) (mcp:fail (strcat worker " is not a batch worker.")))
+  (vlax-for open-document (mcp:documents) (setq before (cons open-document before)))
   (setq document (vl-catch-all-apply 'vla-open (list (mcp:documents) path :vlax-true)))
   (if (vl-catch-all-error-p document)
     (mcp:fail (strcat "BricsCAD could not open " path ": " (vl-catch-all-error-message document)))
@@ -15,7 +18,7 @@
     (setq message (cond (*mcp-pending-error*) ((vl-catch-all-error-message result))))
   )
   (mcp:cancel-command)
-  (vl-catch-all-apply 'vla-close (list document :vlax-false))
+  (mcp:close-documents-not-in before)
   (if message
     (progn
       (setq *mcp-pending-error* message)
@@ -23,6 +26,14 @@
     )
   )
   result
+)
+
+;; Closes, without saving, every open document that is not in `keep`.
+(defun mcp:close-documents-not-in (keep / extra)
+  (vlax-for open-document (mcp:documents)
+    (if (not (member open-document keep)) (setq extra (cons open-document extra)))
+  )
+  (foreach document extra (vl-catch-all-apply 'vla-close (list document :vlax-false)))
 )
 
 ;; ---- Workers that write. Each writes to a temporary path that Python then moves. ----
@@ -48,4 +59,15 @@
     (setq names (cons name names))
   )
   (reverse names)
+)
+
+;; The client's code arrives as a string and is read as one form, so it cannot reach outside it.
+(defun mcp:batch-lisp (code save-path / form value)
+  (setq form (vl-catch-all-apply 'read (list (strcat "(progn\n" code "\n)"))))
+  (if (vl-catch-all-error-p form)
+    (mcp:fail (strcat "The LISP code could not be read: " (vl-catch-all-error-message form)))
+  )
+  (setq value (eval form))
+  (if save-path (mcp:save-copy save-path))
+  value
 )

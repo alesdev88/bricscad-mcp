@@ -233,3 +233,17 @@ async def test_plot_every_sheet_moves_each_pdf_to_its_name(started, fake, src, t
     assert result["files"][0]["status"] == "ok"
     assert sorted(p.name for p in out.iterdir()) == ["a-A_B.pdf", "a-Layout1.pdf"]
     assert result["files"][0]["result"] == ["Layout1", "A/B"]
+
+
+async def test_lisp_code_is_sent_as_a_string(started, fake, src):
+    fake.responses["mcp:batch-file"] = 1
+    code = '(setq a "x") (strlen a)'
+    result = (await run(started, job={"type": "lisp", "code": code}, files=[str(src / "a.dwg")])).structured_content
+    assert result["files"][0]["result"] == 1
+    path = (src / "a.dwg").as_posix()
+    assert batch_calls(fake) == [f'(mcp:batch-file "{path}" "mcp:batch-lisp" (list "(setq a \\"x\\") (strlen a)" nil))']
+
+
+async def test_lisp_save_needs_an_output_folder(client, src):
+    result = await run(client, job={"type": "lisp", "code": "1", "save": True}, folder=str(src), dry_run=True)
+    assert result.is_error and "output_folder" in result.content[0].text

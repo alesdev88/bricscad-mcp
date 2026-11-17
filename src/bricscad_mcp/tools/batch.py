@@ -177,7 +177,7 @@ def _worker(job: Job, temporary: Path | None) -> tuple[str, list[Any]]:
         return "mcp:plot-pdf-now", [temporary.as_posix(), job.layout, *_plot_args(job)]
     if isinstance(job, SaveAsJob):
         return "mcp:save-copy", [temporary.as_posix()]
-    raise BricsCADError(f"The {job.type} job is not available yet.")
+    return "mcp:batch-lisp", [job.code, temporary.as_posix() if temporary else None]
 
 
 def _send(bridge: Bridge, item: FilePlan, worker: str, args: list[Any], timeout: float) -> Any:
@@ -198,7 +198,7 @@ def _run_one(
     write_through_temporary(
         item.target, lambda temporary: results.append(_send(bridge, item, *_worker(job, temporary), timeout))
     )
-    return (results[0] if isinstance(job, PlotPdfJob) else None), [item.target.as_posix()]
+    return (results[0] if isinstance(job, (PlotPdfJob, LispJob)) else None), [item.target.as_posix()]
 
 
 _UNSAFE = re.compile(r'[<>:"/\\|?*]')
