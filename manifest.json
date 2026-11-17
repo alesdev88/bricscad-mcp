@@ -1,0 +1,169 @@
+{
+  "manifest_version": "0.4",
+  "name": "bricscad-mcp",
+  "display_name": "BricsCAD",
+  "version": "0.1.0",
+  "description": "Read, audit and edit drawings in BricsCAD through a LISP listener.",
+  "long_description": "Starts its own BricsCAD window and controls it through a small LISP listener, so it works at every licence level, including Lite, and doesn't need Windows COM. Reads and audits drawings, draws and edits entities, and runs LISP for anything else.\n\nSelf-contained: the bundle carries its own Python and every dependency, so there is nothing to install first. BricsCAD must be installed.\n\n**Updating:** install the newest `.mcpb` for your platform from the [releases page](https://github.com/alesdev88/bricscad-mcp/releases) over this one.",
+  "author": {
+    "name": "Aleš Dolenec",
+    "url": "https://github.com/alesdev88"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alesdev88/bricscad-mcp"
+  },
+  "homepage": "https://github.com/alesdev88/bricscad-mcp/releases",
+  "documentation": "https://github.com/alesdev88/bricscad-mcp#readme",
+  "support": "https://github.com/alesdev88/bricscad-mcp/issues",
+  "license": "MIT",
+  "_meta": {
+    "template": {
+      "note": "Template. scripts/build_bundle.py rewrites the server block and platforms for each bundle it builds; this shows the macOS shape."
+    }
+  },
+  "server": {
+    "type": "binary",
+    "entry_point": "runtime/bin/python3",
+    "mcp_config": {
+      "command": "${__dirname}/runtime/bin/python3",
+      "args": [
+        "-I",
+        "-m",
+        "bricscad_mcp"
+      ],
+      "env": {
+        "BRICSCAD_VERSION": "${user_config.bricscad_version}",
+        "BRICSCAD_EXECUTABLE": "${user_config.bricscad_executable}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "bricscad_audit_report",
+      "description": "Report empty layers, unused blocks, missing xrefs, entities not at zero elevation, and off-standard layer names."
+    },
+    {
+      "name": "bricscad_list_versions",
+      "description": "List the BricsCAD versions installed on this computer, newest first."
+    },
+    {
+      "name": "bricscad_start",
+      "description": "Start BricsCAD in its own window and connect to it. Refuses if that version is already running."
+    },
+    {
+      "name": "bricscad_stop",
+      "description": "Close the BricsCAD this server started. Refuses if drawings have unsaved changes."
+    },
+    {
+      "name": "bricscad_status",
+      "description": "Report whether BricsCAD is running, how recently its listener reported, and the current drawing."
+    },
+    {
+      "name": "bricscad_run_lisp",
+      "description": "Run LISP in BricsCAD and return the value of its last expression."
+    },
+    {
+      "name": "bricscad_open_drawing",
+      "description": "Open a DWG or DXF and make it the current drawing. Returns the same details as bricscad_drawing_info."
+    },
+    {
+      "name": "bricscad_close_drawing",
+      "description": "Close the current drawing. Refuses if it has unsaved changes."
+    },
+    {
+      "name": "bricscad_drawing_info",
+      "description": "Describe the current drawing: name, path, read-only and modified state, units, limits, entity count and layouts."
+    },
+    {
+      "name": "bricscad_list_layers",
+      "description": "List layers with their on, frozen and locked state, color, linetype and entity count. Up to 2000 per call."
+    },
+    {
+      "name": "bricscad_list_blocks",
+      "description": "List block definitions with insert counts, including nested inserts and inserts of dynamic blocks. Up to 2000 per call."
+    },
+    {
+      "name": "bricscad_list_xrefs",
+      "description": "List external references with their stored path and whether the file was found. Up to 2000 per call."
+    },
+    {
+      "name": "bricscad_list_layouts",
+      "description": "List Model and the paper space layouts with their entity counts. Up to 2000 per call."
+    },
+    {
+      "name": "bricscad_query_entities",
+      "description": "Find entities in the current drawing. Returns handle, type, layer, layout and bounding box. Up to 2000 per call."
+    },
+    {
+      "name": "bricscad_get_entity",
+      "description": "Return one entity's type, layer and all its DXF group codes, as [code, value] pairs."
+    },
+    {
+      "name": "bricscad_read_attributes",
+      "description": "Read attribute values from block inserts, for example title block contents. Up to 2000 per call."
+    },
+    {
+      "name": "bricscad_find_text",
+      "description": "Search TEXT, MTEXT, MULTILEADER, table cell and block attribute text for literal text."
+    },
+    {
+      "name": "bricscad_undo",
+      "description": "Undo the last edits to the current drawing. Returns how many steps were undone."
+    },
+    {
+      "name": "bricscad_erase_entities",
+      "description": "Erase entities by handle. Erases all of them or none. bricscad_undo restores them."
+    },
+    {
+      "name": "bricscad_set_layer",
+      "description": "Create a layer, or change one that exists. Only the values you give are changed."
+    },
+    {
+      "name": "bricscad_modify_entities",
+      "description": "Change entities by handle. Changes all of them or none, and refuses locked layers."
+    },
+    {
+      "name": "bricscad_set_attributes",
+      "description": "Set attribute values on block inserts, such as a title block. Changes all of them or none."
+    },
+    {
+      "name": "bricscad_create_entities",
+      "description": "Draw entities and return their handles. Draws all of them or none, as one undo step."
+    },
+    {
+      "name": "bricscad_save_drawing",
+      "description": "Save the current drawing. Returns the same details as bricscad_drawing_info."
+    }
+  ],
+  "user_config": {
+    "bricscad_version": {
+      "type": "string",
+      "title": "BricsCAD version",
+      "description": "The version to start, for example 26. Leave blank for the newest installed.",
+      "required": false,
+      "default": ""
+    },
+    "bricscad_executable": {
+      "type": "file",
+      "title": "BricsCAD program",
+      "description": "Only if BricsCAD isn't found automatically: the full path to the BricsCAD program.",
+      "required": false,
+      "default": ""
+    }
+  },
+  "keywords": [
+    "bricscad",
+    "cad",
+    "dwg",
+    "dxf",
+    "lisp",
+    "drawing"
+  ],
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32"
+    ]
+  }
+}

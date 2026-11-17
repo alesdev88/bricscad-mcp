@@ -28,13 +28,14 @@ def get_platform(name: str | None = None) -> Platform:
 def select_installation(platform: Platform, version: str | None = None) -> Installation:
     """Choose what to start: an explicit version, then the environment, then the newest found."""
     if version is None:
-        override = os.environ.get("BRICSCAD_EXECUTABLE")
+        # Blank counts as unset: install dialogs pass empty fields as "".
+        override = os.environ.get("BRICSCAD_EXECUTABLE", "").strip()
         if override:
             path = Path(override)
             if not path.exists():
                 raise BricsCADError(f"BRICSCAD_EXECUTABLE points to a missing path: {override}")
             return Installation("custom", path)
-        version = os.environ.get("BRICSCAD_VERSION")
+        version = os.environ.get("BRICSCAD_VERSION", "").strip() or None
 
     found = platform.find_installations()
     if not found:

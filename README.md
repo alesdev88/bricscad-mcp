@@ -20,7 +20,53 @@ The Linux install location is unverified, so set `BRICSCAD_EXECUTABLE` if yours 
 
 ## Install
 
-You need [uv](https://docs.astral.sh/uv/) and BricsCAD.
+You need BricsCAD in every case.
+
+### Claude Desktop
+
+Download the bundle for your computer from the
+[latest release](https://github.com/alesdev88/bricscad-mcp/releases/latest) and open it:
+
+- macOS with Apple silicon: `bricscad-mcp-<version>-darwin-arm64.mcpb`
+- Windows: `bricscad-mcp-<version>-win32.mcpb`
+
+The bundle brings its own Python, so there is nothing to install first. Its settings let you pick a
+BricsCAD version, or point to the program if it isn't found. On an Intel Mac, use the `uvx` setup
+below.
+
+### Claude Code, Codex and other clients
+
+These run the server from PyPI with [uv](https://docs.astral.sh/uv/), so install uv first.
+
+Claude Code:
+
+```bash
+claude mcp add bricscad -- uvx bricscad-mcp
+```
+
+Codex (the CLI, the IDE extension and the ChatGPT desktop app share this setting):
+
+```bash
+codex mcp add bricscad -- uvx bricscad-mcp
+```
+
+Cursor, VS Code, Windsurf and other clients that take an `mcpServers` entry:
+
+```json
+{
+  "mcpServers": {
+    "bricscad": {
+      "command": "uvx",
+      "args": ["bricscad-mcp"],
+      "env": { "BRICSCAD_VERSION": "26" }
+    }
+  }
+}
+```
+
+`env` is optional. See [Environment variables](#environment-variables).
+
+### From source
 
 ```bash
 git clone https://github.com/alesdev88/bricscad-mcp.git
@@ -30,7 +76,7 @@ git clone https://github.com/alesdev88/bricscad-mcp.git
 cd bricscad-mcp && uv sync
 ```
 
-Register it with Claude Code, using the full path to your copy:
+Then register it, using the full path to your copy:
 
 ```bash
 claude mcp add bricscad -- uv --directory "/full/path/to/bricscad-mcp" run bricscad-mcp
@@ -129,3 +175,19 @@ Passing them on Windows or Linux is what moves that platform to Supported.
 
 Design and test results are in `docs/`: start with `docs/superpowers/specs/2026-11-06-bricscad-mcp-design.md`
 and `docs/phase-0-results.md`.
+
+## Releasing
+
+1. Set the new version in `pyproject.toml`, `manifest.json` and `server.json`, then run `uv lock`.
+   A test checks that the three agree, and that `manifest.json` lists every tool.
+2. Push a tag for it, such as `v0.1.0`. The `release` workflow tests the commit, checks a fresh
+   install of the wheel, builds both bundles, creates the GitHub release, publishes to PyPI and then
+   to the MCP registry.
+3. Install each bundle on its platform before announcing the release. CI can't start them.
+
+To build a bundle locally, `uv run python scripts/build_bundle.py --target darwin-arm64` (or `win32`
+or `all`). It needs Node for the `mcpb` packer; `--no-pack` stops before packing and leaves the
+unpacked bundle in `build/`.
+
+PyPI publishing needs a trusted publisher on pypi.org for this repository, workflow `publish.yml`,
+environment left blank.
