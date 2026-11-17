@@ -2,13 +2,14 @@
 
 import os
 import re
+from fnmatch import fnmatch
 import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import Field, TypeAdapter
+from pydantic import Field, TypeAdapter, field_validator
 
 from ..bridge import Bridge
 from ..errors import BricsCADError, BridgeTimeout, ProcessDied, SafetyRefused
@@ -64,6 +65,45 @@ class LispJob(Strict):
     code: str = Field(min_length=1)
     save: bool = False
 
+    @field_validator("code")
+    @classmethod
+    def _balanced(cls, code: str) -> str:
+        # LISP reads one form, so an extra ")" would quietly drop the code after it.
+        problem = unbalanced(code)
+        if problem:
+            raise ValueError(problem)
+        return code
+
+
+def unbalanced(code: str) -> str | None:
+    """Why the parentheses in LISP code do not balance, or None. Skips strings and comments."""
+    depth = 0
+    i = 0
+    while i < len(code):
+        char = code[i]
+        if char == '"':
+            i += 1
+            while i < len(code) and code[i] != '"':
+                i += 2 if code[i] == "\\" else 1
+            if i >= len(code):
+                return "A string in the LISP code is not closed."
+        elif code.startswith(";|", i):
+            end = code.find("|;", i + 2)
+            if end < 0:
+                return "A ;| comment in the LISP code is not closed."
+            i = end + 1
+        elif char == ";":
+            end = code.find("\n", i)
+            i = len(code) if end < 0 else end
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return "The LISP code has a ) with no ( before it."
+        i += 1
+    return "The LISP code has a ( that is not closed." if depth else None
+
 
 Job = Annotated[
     Union[AuditJob, FindTextJob, ExportDxfJob, PlotPdfJob, SaveAsJob, LispJob], Field(discriminator="type")
@@ -107,8 +147,15 @@ def list_sources(
         root = Path(folder).expanduser().absolute()
         if not root.is_dir():
             raise BricsCADError(f"The folder does not exist: {root}")
-        found = root.rglob(pattern) if recursive else root.glob(pattern)
-        candidates = sorted(path for path in found if path.is_file())
+        # Any letter case, as drawings from Windows often end in .DWG. Hidden names are left out:
+        # macOS ._ files and this server's own temporary files are not drawings to process.
+        found = root.rglob("*") if recursive else root.iterdir()
+        candidates = sorted(
+            path for path in found
+            if path.is_file()
+            and not any(part.startswith(".") for part in path.relative_to(root).parts)
+            and fnmatch(path.name.casefold(), pattern.casefold())
+        )
     else:
         candidates = [Path(path) for path in files]
     sources: list[Path] = []
@@ -140,6 +187,7 @@ def plan(sources: list[Path], job: Job, output_folder: str | None, overwrite: bo
     if not os.access(out, os.W_OK):
         raise SafetyRefused(f"The output folder is not writable: {out}")
     if every_sheet(job):
+        _refuse_shared_stems(sources)
         return [FilePlan(source, folder=out) for source in sources]
     plans = [FilePlan(source, out / f"{source.stem}{suffix}", folder=out) for source in sources]
     _refuse_shared_targets(plans)
@@ -149,6 +197,15 @@ def plan(sources: list[Path], job: Job, output_folder: str | None, overwrite: bo
         except SafetyRefused as refusal:
             item.refused = str(refusal)
     return plans
+
+
+def _refuse_shared_stems(sources: list[Path]) -> None:
+    seen: dict[str, Path] = {}
+    for source in sources:
+        key = source.stem.casefold()
+        if key in seen:
+            raise BricsCADError(f"{seen[key]} and {source} would both write {source.stem}-<sheet>.pdf.")
+        seen[key] = source
 
 
 def _refuse_shared_targets(plans: list[FilePlan]) -> None:
@@ -165,7 +222,7 @@ def _plot_args(job: PlotPdfJob) -> list[Any]:
     return [job.paper, side, job.area, job.window, job.scale, job.style_table]
 
 
-def _worker(job: Job, temporary: Path | None) -> tuple[str, list[Any]]:
+def _worker(job: Job, source: Path, temporary: Path | None) -> tuple[str, list[Any]]:
     """The LISP worker and its arguments. temporary: where a writing job writes."""
     if isinstance(job, AuditJob):
         return "mcp:audit-report", [job.allowed_layers, job.sample_limit]
@@ -177,7 +234,7 @@ def _worker(job: Job, temporary: Path | None) -> tuple[str, list[Any]]:
         return "mcp:plot-pdf-now", [temporary.as_posix(), job.layout, *_plot_args(job)]
     if isinstance(job, SaveAsJob):
         return "mcp:save-copy", [temporary.as_posix()]
-    return "mcp:batch-lisp", [job.code, temporary.as_posix() if temporary else None]
+    return "mcp:batch-lisp", [job.code, source.as_posix(), temporary.as_posix() if temporary else None]
 
 
 def _send(bridge: Bridge, item: FilePlan, worker: str, args: list[Any], timeout: float) -> Any:
@@ -185,18 +242,24 @@ def _send(bridge: Bridge, item: FilePlan, worker: str, args: list[Any], timeout:
 
 
 def _run_one(
-    bridge: Bridge, job: Job, item: FilePlan, state: dict[str, Any], overwrite: bool, timeout: float
+    bridge: Bridge,
+    job: Job,
+    item: FilePlan,
+    state: dict[str, Any],
+    overwrite: bool,
+    timeout: float,
+    written: set[str],
 ) -> tuple[Any, list[str]]:
     suffix = output_suffix(job)
     if suffix is None:
-        return _send(bridge, item, *_worker(job, None), timeout), []
+        return _send(bridge, item, *_worker(job, item.source, None), timeout), []
     if every_sheet(job):
-        return _plot_every_sheet(bridge, job, item, state, overwrite, timeout)
+        return _plot_every_sheet(bridge, job, item, state, overwrite, timeout, written)
     # Checked again now that BricsCAD says which drawings are open.
     check_output_target(str(item.target), suffix, state, overwrite)
     results: list[Any] = []
     write_through_temporary(
-        item.target, lambda temporary: results.append(_send(bridge, item, *_worker(job, temporary), timeout))
+        item.target, lambda temporary: results.append(_send(bridge, item, *_worker(job, item.source, temporary), timeout))
     )
     return (results[0] if isinstance(job, (PlotPdfJob, LispJob)) else None), [item.target.as_posix()]
 
@@ -205,7 +268,13 @@ _UNSAFE = re.compile(r'[<>:"/\\|?*]')
 
 
 def _plot_every_sheet(
-    bridge: Bridge, job: PlotPdfJob, item: FilePlan, state: dict[str, Any], overwrite: bool, timeout: float
+    bridge: Bridge,
+    job: PlotPdfJob,
+    item: FilePlan,
+    state: dict[str, Any],
+    overwrite: bool,
+    timeout: float,
+    written: set[str],
 ) -> tuple[Any, list[str]]:
     out = item.folder
     folder = out / f".mcp-{uuid.uuid4().hex[:8]}"
@@ -217,12 +286,16 @@ def _plot_every_sheet(
             for n, sheet in enumerate(sheets, start=1)
         ]
         for _, target in moves:
+            # Sheet names can make two drawings' names meet, such as x with sheet A-B and x-A with sheet B.
+            if target.name.casefold() in written:
+                raise BricsCADError(f"{target} was already written by this batch, so it was left alone.")
             check_output_target(str(target), ".pdf", state, overwrite)
         for plotted, target in moves:
             if not plotted.exists() or plotted.stat().st_size == 0:
                 raise BricsCADError(f"BricsCAD did not write {target}.")
         for plotted, target in moves:
             os.replace(plotted, target)
+            written.add(target.name.casefold())
     finally:
         shutil.rmtree(folder, ignore_errors=True)
     return sheets, [target.as_posix() for _, target in moves]
@@ -258,6 +331,7 @@ def batch_run(
         if bridge is None:
             raise BricsCADError("BricsCAD is not running. Start it with bricscad_start, or use dry_run.")
         state = bridge.send(call("mcp:save-state"))
+        written: set[str] = set()
         open_now = ([state["path"]] if state["titled"] else []) + state["other_open"]
         for item in plans:
             if stopped:
@@ -268,15 +342,19 @@ def batch_run(
                 entries.append(_entry(item, "refused", error="It is open in BricsCAD. Close it first, or leave it out."))
             else:
                 try:
-                    result, outputs = _run_one(bridge, job, item, state, overwrite, timeout)
+                    result, outputs = _run_one(bridge, job, item, state, overwrite, timeout, written)
                     entries.append(_entry(item, "ok", outputs, result=result))
                 except (BridgeTimeout, ProcessDied) as error:
                     stopped = str(error)
                     entries.append(_entry(item, "failed", error=stopped))
-                except BricsCADError as error:
+                except (BricsCADError, OSError, ValueError) as error:
+                    # One file's trouble, such as a PDF open in a viewer, must not lose the others' results.
                     entries.append(_entry(item, "failed", error=str(error)))
         if not stopped:
-            current = bridge.send('(getvar "DWGNAME")')
+            try:
+                current = bridge.send('(getvar "DWGNAME")')
+            except BricsCADError:
+                current = None
     count = lambda status: sum(1 for entry in entries if entry["status"] == status)  # noqa: E731
     return {
         "dry_run": dry_run, "total": len(entries), "succeeded": count("ok"), "failed": count("failed"),

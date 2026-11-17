@@ -172,7 +172,8 @@ is 2000.
   once the new one is complete, with no `.bak`.
 - Batch jobs open their drawings read-only and never write them unless the output folder is their own
   folder and `overwrite=true`. Drawings already open in BricsCAD are refused, and each output replaces
-  a file only once it is complete.
+  a file only once it is complete, with no `.bak`. Code in a `lisp` job can still save anywhere itself,
+  as with `bricscad_run_lisp`.
 
 ## Environment variables
 

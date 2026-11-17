@@ -140,7 +140,6 @@ def test_lisp_job_with_save_writes_copies(real_session, sources, tmp_path):
 
 
 @pytest.mark.parametrize("code, status", [
-    ("(+ 1", "failed"),
     ("(/ 1 0)", "failed"),
     ('(command "_.LINE")', "ok"),
     ("(vla-close (mcp:active-document) :vlax-false)", "ok"),
@@ -153,3 +152,16 @@ def test_bad_lisp_leaves_the_session_working(real_session, blank, sources, code,
     assert document_count(real_session) == count
     again = run(real_session, "lisp", folder=str(sources), options={"code": "(+ 1 2)"})
     assert [f["result"] for f in again["files"]] == [3, 3, 3]
+
+
+def test_lisp_save_refuses_when_the_code_closed_its_drawing(real_session, blank, sources, tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    before = digests(sources)
+    count = document_count(real_session)
+    code = "(vla-close (mcp:active-document) :vlax-false)"
+    result = run(real_session, "lisp", folder=str(sources), output_folder=str(out), options={"code": code, "save": True})
+    assert [f["status"] for f in result["files"]] == ["failed"] * 3
+    assert "nothing was saved" in result["files"][0]["error"]
+    assert list(out.iterdir()) == [] and digests(sources) == before
+    assert document_count(real_session) == count

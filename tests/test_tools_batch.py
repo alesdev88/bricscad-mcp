@@ -1,4 +1,6 @@
+import os
 import re
+from pathlib import Path
 import time
 
 import pytest
@@ -241,9 +243,74 @@ async def test_lisp_code_is_sent_as_a_string(started, fake, src):
     result = (await run(started, job={"type": "lisp", "code": code}, files=[str(src / "a.dwg")])).structured_content
     assert result["files"][0]["result"] == 1
     path = (src / "a.dwg").as_posix()
-    assert batch_calls(fake) == [f'(mcp:batch-file "{path}" "mcp:batch-lisp" (list "(setq a \\"x\\") (strlen a)" nil))']
+    assert batch_calls(fake) == [f'(mcp:batch-file "{path}" "mcp:batch-lisp" (list "(setq a \\"x\\") (strlen a)" "{path}" nil))']
 
 
 async def test_lisp_save_needs_an_output_folder(client, src):
     result = await run(client, job={"type": "lisp", "code": "1", "save": True}, folder=str(src), dry_run=True)
     assert result.is_error and "output_folder" in result.content[0].text
+
+
+async def test_every_sheet_refuses_two_sources_with_one_name(client, tmp_path):
+    files = [str(drawing(tmp_path / "one" / "x.dwg")), str(drawing(tmp_path / "two" / "X.dwg"))]
+    (tmp_path / "out").mkdir()
+    result = await run(client, job={"type": "plot_pdf", "layout": "*"}, files=files, output_folder=str(tmp_path / "out"), dry_run=True)
+    assert result.is_error and "x.dwg" in result.content[0].text.lower()
+
+
+async def test_every_sheet_never_replaces_what_this_batch_wrote(started, fake, tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    files = [str(drawing(tmp_path / "s" / "x.dwg")), str(drawing(tmp_path / "s" / "x-A.dwg"))]
+
+    def answer(expr):
+        with open(f"{strings(expr)[2]}/1.pdf", "wb") as file:
+            file.write(b"%PDF " + strings(expr)[0].encode())
+        return ["A-B"] if strings(expr)[0].endswith("/x.dwg") else ["B"]
+
+    fake.responses["mcp:batch-file"] = answer
+    result = (await run(started, job={"type": "plot_pdf", "layout": "*"}, files=files, output_folder=str(out), overwrite=True)).structured_content
+    assert [f["status"] for f in result["files"]] == ["ok", "failed"]
+    assert "this batch" in result["files"][1]["error"]
+    assert (out / "x-A-B.pdf").read_bytes().endswith(b"/x.dwg")
+
+
+async def test_a_file_system_error_fails_that_file_only(started, fake, src, tmp_path, monkeypatch):
+    out = tmp_path / "out"
+    out.mkdir()
+    fake.responses["mcp:batch-file"] = writes_third_string(b"0\nSECTION\n")
+    real_replace = os.replace
+
+    def replace(source, target):
+        if str(target).endswith("b.dxf"):
+            raise PermissionError("in use")
+        return real_replace(source, target)
+
+    monkeypatch.setattr("bricscad_mcp.tools.export.os.replace", replace)
+    result = await run(started, job={"type": "export_dxf"}, folder=str(src), output_folder=str(out))
+    assert not result.is_error, result.content
+    files = result.structured_content["files"]
+    assert [f["status"] for f in files] == ["ok", "failed", "ok"] and "in use" in files[1]["error"]
+
+
+@pytest.mark.parametrize("code", ["(foo)) (bar)", "(+ 1", ")", '(princ "a") "'])
+async def test_unbalanced_lisp_refuses_the_batch(client, fake, src, code):
+    result = await run(client, job={"type": "lisp", "code": code}, folder=str(src), dry_run=True)
+    assert result.is_error
+
+
+@pytest.mark.parametrize("code", ['(princ ")")', "; a ) comment\n(+ 1 2)", ";| ) ( |; (+ 1 2)", '(strcat "\\"(" "x")'])
+async def test_balanced_lisp_with_parens_in_text_is_accepted(client, src, code):
+    result = await run(client, job={"type": "lisp", "code": code}, folder=str(src), dry_run=True)
+    assert not result.is_error, result.content
+
+
+async def test_folder_listing_ignores_case_and_hidden_files(client, tmp_path):
+    folder = tmp_path / "mixed"
+    for name in ("A.DWG", "b.dwg", "._c.dwg", ".x.mcp-1234abcd.dwg", ".hidden/d.dwg", "sub/E.Dwg"):
+        drawing(folder / name)
+    (folder / "._c.dwg").write_bytes(b"AppleDouble")
+    flat = await run(client, job={"type": "audit"}, folder=str(folder), dry_run=True)
+    deep = await run(client, job={"type": "audit"}, folder=str(folder), recursive=True, dry_run=True)
+    assert [Path(f["source"]).name for f in flat.structured_content["files"]] == ["A.DWG", "b.dwg"]
+    assert [Path(f["source"]).name for f in deep.structured_content["files"]] == ["A.DWG", "b.dwg", "E.Dwg"]

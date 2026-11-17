@@ -62,12 +62,28 @@
 )
 
 ;; The client's code arrives as a string and is read as one form, so it cannot reach outside it.
-(defun mcp:batch-lisp (code save-path / form value)
+;; Saving needs the batch's own drawing still current: code that closed it or switched away
+;; would otherwise save another drawing, maybe the user's. Only system variables are read,
+;; since a closed document's object must not be touched.
+(defun mcp:batch-lisp (code source save-path / form value)
   (setq form (vl-catch-all-apply 'read (list (strcat "(progn\n" code "\n)"))))
   (if (vl-catch-all-error-p form)
     (mcp:fail (strcat "The LISP code could not be read: " (vl-catch-all-error-message form)))
   )
   (setq value (eval form))
-  (if save-path (mcp:save-copy save-path))
+  (if save-path
+    (progn
+      (if (not (and (mcp:current-path-p source)
+                    (= (vla-get-readonly (mcp:active-document)) :vlax-true)))
+        (mcp:fail "The LISP code left another drawing current, so nothing was saved.")
+      )
+      (mcp:save-copy save-path)
+    )
+  )
   value
+)
+
+(defun mcp:current-path-p (path)
+  (= (strcase (vl-string-translate "\\" "/" (strcat (getvar "DWGPREFIX") (getvar "DWGNAME"))))
+     (strcase (vl-string-translate "\\" "/" path)))
 )
