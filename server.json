@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.alesdev88/bricscad-mcp",
   "title": "BricsCAD",
-  "description": "Read, audit and edit drawings in BricsCAD through a LISP listener. Works at Lite level.",
-  "version": "0.1.0",
+  "description": "Read, audit, edit, plot and batch-process BricsCAD drawings. Works at Lite level.",
+  "version": "0.2.0",
   "repository": {
     "url": "https://github.com/alesdev88/bricscad-mcp",
     "source": "github"
@@ -11,8 +11,8 @@
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/alesdev88/bricscad-mcp/releases/download/v0.1.0/bricscad-mcp-0.1.0-win32.mcpb",
-      "version": "0.1.0",
+      "identifier": "https://github.com/alesdev88/bricscad-mcp/releases/download/v0.2.0/bricscad-mcp-0.2.0-win32.mcpb",
+      "version": "0.2.0",
       "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "transport": {
         "type": "stdio"
@@ -20,8 +20,8 @@
     },
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/alesdev88/bricscad-mcp/releases/download/v0.1.0/bricscad-mcp-0.1.0-darwin-arm64.mcpb",
-      "version": "0.1.0",
+      "identifier": "https://github.com/alesdev88/bricscad-mcp/releases/download/v0.2.0/bricscad-mcp-0.2.0-darwin-arm64.mcpb",
+      "version": "0.2.0",
       "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "transport": {
         "type": "stdio"
