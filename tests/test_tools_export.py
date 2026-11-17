@@ -1,5 +1,6 @@
 import base64
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -215,6 +216,7 @@ async def test_preview_refuses_a_bad_window(started, fake):
     assert [r for r in fake.requests if r.startswith("(mcp:preview-image")] == []
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows ignores permission bits on folders, so chmod cannot make one unwritable")
 async def test_export_refuses_a_folder_it_cannot_write(started, exporting, folder):
     folder.chmod(0o555)
     try:
