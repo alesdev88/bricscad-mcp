@@ -1,11 +1,11 @@
 # BricsCAD MCP
 
-An MCP server that lets Claude, or any MCP client, read and audit drawings in BricsCAD.
+An MCP server that lets Claude, or any MCP client, read, audit, edit, plot and export drawings in BricsCAD.
 It starts its own BricsCAD window and controls it through a small LISP listener, so it works
 at every licence level, including Lite, and doesn't need Windows COM.
 
-Status: Phase 1 of 4. Reading and auditing work. Drawing and editing, plotting, and batch jobs
-are planned.
+Status: Phases 1 to 3 of 4. Reading, auditing, drawing and editing, plotting and export work. Batch
+jobs are planned.
 
 ## Platform support
 
@@ -123,6 +123,9 @@ claude mcp add bricscad -- uv --directory "/full/path/to/bricscad-mcp" run brics
 | `bricscad_set_attributes` | Sets block attribute values, such as title block contents |
 | `bricscad_undo` | Undoes edit tool calls, one step each |
 | `bricscad_save_drawing` | Saves to a new path, or over the open file with `overwrite=true` |
+| `bricscad_export_dxf` | Writes the drawing as DXF, R12 or 2000 to 2018 |
+| `bricscad_plot_pdf` | Plots the model or a sheet to PDF, with paper, orientation, area, scale and plot style |
+| `bricscad_preview_image` | Returns a PNG of the model, a sheet or a window, so the client can check its work |
 | `bricscad_run_lisp` | Runs LISP for anything the other tools don't cover |
 
 List tools take `limit` and `offset` and report `total`. The default limit is 200 and the maximum
@@ -157,6 +160,9 @@ is 2000.
 - Saving over an existing file needs `overwrite=true`, and the server checks that before BricsCAD is
   involved. A read-only drawing can only be saved to a new path, a file open as another drawing or
   marked read-only is never replaced, and a replaced file leaves a `.bak` beside it.
+- Exporting, plotting and previews never change the drawing, not even its modified state. They refuse
+  an existing file without `overwrite=true`, never write over an open drawing, and replace a file only
+  once the new one is complete, with no `.bak`.
 
 ## Environment variables
 
@@ -176,6 +182,9 @@ is 2000.
   and names each one. It detects the code page when it starts BricsCAD.
 - Don't close the only open drawing with your own LISP, because the listener stops. `bricscad_close_drawing`
   handles this for you.
+- PDFs are plotted with `Print As PDF.pc3` only. Paper sizes go by BricsCAD's own name, such as
+  `ISO A3 (297.00 x 420.00 MM)`; an unknown name is reported, not guessed.
+- Previews are the size of the BricsCAD window, and the model shows on black, as on screen.
 
 ## Development
 
