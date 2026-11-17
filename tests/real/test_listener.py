@@ -39,6 +39,17 @@ def test_json_encodes_values(real_session, expr, expected):
     assert real_session.bridge.send(expr) == expected
 
 
+def test_text_lisp_cannot_hold_is_refused(real_session):
+    # Only LISP without Unicode, as on Windows, lacks characters.
+    encoding = real_session.bridge.reply_encoding
+    missing = [c for c in "中ж€" if c.encode(encoding, errors="replace") == "?".encode(encoding)]
+    if not missing:
+        pytest.skip(f"LISP here holds text as {encoding}, which has every test character")
+    with pytest.raises(BricsCADError, match=f"U\\+{ord(missing[0]):04X}"):
+        real_session.bridge.send(lisp_value("a" + missing[0]))
+    assert real_session.bridge.send(lisp_value("čšž")) == "čšž"
+
+
 def test_a_long_string_survives(real_session):
     assert real_session.bridge.send(lisp_value("č" * 20000)) == "č" * 20000
 

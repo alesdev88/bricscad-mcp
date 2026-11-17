@@ -13,12 +13,13 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
-from .errors import BridgeTimeout, LispError, ProcessDied
+from .errors import BricsCADError, BridgeTimeout, LispError, ProcessDied
 
 ENCODING = "utf-8"
 
 # Requests are always UTF-8: BricsCAD converts them on load. Replies come back in LISP's own
 # text encoding, which is UTF-8 only where LISP supports Unicode. See Session for the check.
+# A request with characters that encoding lacks is refused, as LISP would turn them into "?".
 
 
 class Bridge:
@@ -36,6 +37,7 @@ class Bridge:
 
     def send(self, expr: str, timeout: float = 30.0) -> Any:
         """Run a LISP expression in BricsCAD and return its result."""
+        self._refuse_text_lisp_cannot_hold(expr)
         with self._lock:
             self._raise_if_dead()
             self._discard_old_replies()
@@ -60,6 +62,20 @@ class Bridge:
     def expire_alive_for_test(self) -> None:
         then = time.time() - 3600
         os.utime(self.queue_dir / "server.alive", (then, then))
+
+    def _refuse_text_lisp_cannot_hold(self, expr: str) -> None:
+        # LISP without Unicode turns such characters into "?" without an error.
+        try:
+            expr.encode(self.reply_encoding)
+            return
+        except UnicodeEncodeError:
+            pass
+        missing = dict.fromkeys(c for c in expr if not _can_encode(c, self.reply_encoding))
+        listed = ", ".join(f"{c!r} (U+{ord(c):04X})" for c in missing)
+        raise BricsCADError(
+            f"BricsCAD's LISP here holds text as {self.reply_encoding}, which has no {listed}. "
+            "Nothing was sent. Leave these characters out or replace them."
+        )
 
     def _wait_for_reply(self, request_id: str, request: Path, timeout: float) -> Any:
         reply = request.with_suffix(".json")
@@ -109,6 +125,14 @@ class Bridge:
             f"so check the BricsCAD window. {heartbeat} If it had already started this request, "
             "it keeps running and its result is lost, so check the current state before retrying."
         )
+
+
+def _can_encode(character: str, encoding: str) -> bool:
+    try:
+        character.encode(encoding)
+        return True
+    except UnicodeEncodeError:
+        return False
 
 
 def _remove(path: Path) -> None:

@@ -106,9 +106,9 @@ is 2000.
   dialogs that haven't been seen yet, such as missing fonts or proxy objects.
 - `vla-save` opens a dialog and `vla-saveas` fails on macOS, so use `_.QSAVE` and `_.SAVEAS` in LISP.
 - On Windows, BricsCAD's LISP holds text in the Windows code page (`SYSCODEPAGE`), not Unicode.
-  Slovenian and other text in that code page works. Characters outside it, such as Chinese on a
-  Central European system, don't survive the trip through LISP. The server detects the code page
-  when it starts BricsCAD.
+  Slovenian and other text in that code page works. LISP would turn characters outside it, such as
+  Chinese on a Central European system, into `?`, so the server refuses any call that contains them
+  and names each one. It detects the code page when it starts BricsCAD.
 - Don't close the only open drawing with your own LISP, because the listener stops. `bricscad_close_drawing`
   handles this for you.
 
