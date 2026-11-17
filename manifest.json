@@ -138,6 +138,10 @@
     {
       "name": "bricscad_export_dxf",
       "description": "Write the current drawing as a DXF file. The drawing keeps its name and state."
+    },
+    {
+      "name": "bricscad_plot_pdf",
+      "description": "Plot one layout of the current drawing to a PDF file, with Print As PDF.pc3. The drawing is not changed."
     }
   ],
   "user_config": {

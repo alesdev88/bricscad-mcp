@@ -1,6 +1,8 @@
 """Exporting and plotting the current drawing. Nothing here changes the drawing."""
 
+import math
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Literal
@@ -14,6 +16,9 @@ from .edit import is_same_file
 from .read import _run
 
 DxfVersion = Literal["R12", "2000", "2004", "2007", "2010", "2013", "2018"]
+PlotArea = Literal["extents", "layout", "window"]
+
+_SCALE = re.compile(r"(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)", re.ASCII)
 
 
 def check_output_target(path: str, suffix: str, state: dict[str, Any], overwrite: bool) -> Path:
@@ -78,3 +83,93 @@ async def bricscad_export_dxf(
     overwrite: true allows replacing an existing file. It is replaced only once the new one is complete.
     """
     return await _run(export_dxf, path, version, overwrite, timeout)
+
+
+def check_window(window: list[float] | None) -> list[float] | None:
+    if window is None:
+        return None
+    if len(window) != 4 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in window):
+        raise BricsCADError("window must be [x1, y1, x2, y2] with finite numbers.")
+    x1, y1, x2, y2 = (float(v) for v in window)
+    if x1 == x2 or y1 == y2:
+        raise BricsCADError("window must have a width and a height.")
+    return [x1, y1, x2, y2]
+
+
+def _check_answer(name: str, value: str | None) -> None:
+    # Each answer is one line on BricsCAD's command line. A line break would answer the next question.
+    if value is not None and ("\n" in value or "\r" in value):
+        raise BricsCADError(f"{name} cannot hold a line break.")
+
+
+def _check_scale(scale: str | None) -> None:
+    if scale is None or scale == "fit":
+        return
+    match = _SCALE.fullmatch(scale)
+    if not match or float(match.group(1)) == 0 or float(match.group(2)) == 0:
+        raise BricsCADError(f'scale must be "fit" or plotted millimetres to drawing units, such as "1:100": {scale}')
+
+
+def plot_pdf(
+    bridge: Bridge,
+    path: str,
+    layout: str | None = None,
+    paper: str | None = None,
+    landscape: bool | None = None,
+    area: str | None = None,
+    window: list[float] | None = None,
+    scale: str | None = None,
+    style_table: str | None = None,
+    overwrite: bool = False,
+    timeout: float = 120.0,
+) -> dict[str, Any]:
+    for name, value in (("layout", layout), ("paper", paper), ("style_table", style_table)):
+        _check_answer(name, value)
+    _check_scale(scale)
+    if area == "window" and window is None:
+        raise BricsCADError('area="window" needs window=[x1, y1, x2, y2].')
+    if window is not None and area != "window":
+        raise BricsCADError('window is only used with area="window".')
+    window = check_window(window)
+    target = check_output_target(path, ".pdf", bridge.send(call("mcp:save-state")), overwrite)
+    side = None if landscape is None else int(landscape)
+    plotted: list[str] = []
+
+    def produce(temporary: Path) -> None:
+        plotted.append(
+            bridge.send(
+                call("mcp:plot-pdf", temporary.as_posix(), layout, paper, side, area, window, scale, style_table),
+                timeout,
+            )
+        )
+
+    return {**write_through_temporary(target, produce), "layout": plotted[0]}
+
+
+@mcp.tool(annotations=DESTRUCTIVE)
+async def bricscad_plot_pdf(
+    path: str,
+    layout: str | None = None,
+    paper: str | None = None,
+    landscape: bool | None = None,
+    area: PlotArea | None = None,
+    window: list[float] | None = None,
+    scale: str | None = None,
+    style_table: str | None = None,
+    overwrite: bool = False,
+    timeout: float = 120.0,
+) -> dict[str, Any]:
+    """Plot one layout of the current drawing to a PDF file, with Print As PDF.pc3. The drawing is not changed.
+
+    path: a .pdf file in an existing folder.
+    layout: "Model" or a sheet name. Defaults to the current layout.
+    paper: BricsCAD's paper name, such as "ISO A3 (297.00 x 420.00 MM)". Defaults to the layout's current size.
+    landscape: true or false. Defaults to the layout's current orientation.
+    area: "extents", "layout" (sheets only) or "window". Defaults to extents for the model and layout for sheets.
+    window: [x1, y1, x2, y2] in drawing units, with area="window".
+    scale: "fit", or plotted millimetres to drawing units such as "1:100". Defaults to fit for the model
+    and 1:1 for sheets.
+    style_table: a plot style table such as "monochrome.ctb". Defaults to the layout's own.
+    overwrite: true allows replacing an existing file. It is replaced only once the new one is complete.
+    """
+    return await _run(plot_pdf, path, layout, paper, landscape, area, window, scale, style_table, overwrite, timeout)
