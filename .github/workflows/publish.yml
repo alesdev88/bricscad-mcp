@@ -1,0 +1,98 @@
+name: release
+
+# Push a version tag such as v0.1.0 to release that commit: the GitHub release with both MCPB
+# bundles, PyPI, then the MCP registry. Modelled on Archicad MCP's publish.yml.
+on:
+  push:
+    tags: ["v*"]
+
+# contents creates the release. id-token mints a short-lived OIDC token that PyPI and the MCP
+# registry accept, so no credential is stored. PyPI matches the token against this file's name:
+# renaming publish.yml ends PyPI publishing until the trusted publisher on pypi.org is updated.
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: "3.12"
+    steps:
+      # No stored git credential: nothing here pushes, and npx and uv run code that is not ours.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+
+      # Before anything is built: a mismatch means deleting and re-pushing the tag.
+      - run: uv run --no-project python scripts/check_release_version.py "$GITHUB_REF_NAME"
+      # The bundles ship uv.lock's versions, so it must agree with pyproject.toml.
+      - run: uv lock --check
+
+      # A tag can point at a commit CI never tested.
+      - run: uv sync
+      - run: uv run pytest -v
+
+      - run: uv build
+      # The wheel as uvx users get it: without the lock, newest allowed dependencies.
+      - run: uv run --no-project python scripts/check_wheel_install.py
+
+      # Both bundles, cross-built here. Nothing on this runner can start either one, so a release
+      # is proven only once each bundle has been installed on its platform.
+      - run: uv run python scripts/build_bundle.py --target all
+
+      # The registry checks each bundle against its hash, which can only be known now.
+      - run: |
+          version="${GITHUB_REF_NAME#v}"
+          for target in win32 darwin-arm64; do
+            name="bricscad-mcp-${version}-${target}.mcpb"
+            sha="$(sha256sum "dist/$name" | cut -d' ' -f1)"
+            jq --arg name "$name" --arg sha "$sha" \
+              '(.packages[] | select(.identifier | endswith($name))).fileSha256 = $sha' \
+              server.json > server.stamped
+            mv server.stamped server.json
+          done
+          if jq -e '[.packages[] | select(.fileSha256 | test("^0{64}$"))] | length > 0' \
+               server.json > /dev/null; then
+            echo "::error::a package in server.json kept its placeholder hash" >&2
+            exit 1
+          fi
+
+      # Anything other than major.minor.patch is a prerelease.
+      - run: |
+          if [[ "${GITHUB_REF_NAME#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "PRERELEASE=false" >> "$GITHUB_ENV"
+          else
+            echo "PRERELEASE=true" >> "$GITHUB_ENV"
+          fi
+
+      # Create, or replace the assets if a re-run finds the release already there.
+      - run: |
+          flags=(--generate-notes --title "$GITHUB_REF_NAME")
+          if [[ "$PRERELEASE" == "true" ]]; then
+            flags+=(--prerelease)
+          fi
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --clobber dist/*.mcpb dist/*.whl dist/*.tar.gz
+          else
+            gh release create "$GITHUB_REF_NAME" "${flags[@]}" dist/*.mcpb dist/*.whl dist/*.tar.gz
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # Wheel and sdist only. --check-url skips files PyPI already holds, so a re-run gets past here.
+      - name: Publish to PyPI
+        run: |
+          uv publish --trusted-publishing always \
+            --check-url https://pypi.org/simple/ \
+            dist/*.whl dist/*.tar.gz
+
+      # Last, after the release assets exist, because the registry hands their URLs to clients.
+      # Skipped for prereleases: the registry offers one current version per server.
+      - name: Publish to the MCP registry
+        if: env.PRERELEASE == 'false'
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

@@ -11,3 +11,6 @@ build/
 *.bak
 *.dwl
 *.dwl2
+
+# Bundle builds
+build/

@@ -29,6 +29,15 @@ async def test_the_installed_command_serves_every_tool():
     }
 
 
+async def test_python_dash_m_serves_the_same_tools():
+    # The MCPB bundle starts the server as `python -I -m bricscad_mcp`.
+    params = StdioServerParameters(command=sys.executable, args=["-I", "-m", "bricscad_mcp"])
+    async with Client(params) as client:
+        names = {tool.name for tool in (await client.list_tools()).tools}
+    async with Client(StdioServerParameters(command=server_command())) as client:
+        assert names == {tool.name for tool in (await client.list_tools()).tools}
+
+
 async def test_status_works_before_start_over_stdio():
     async with Client(StdioServerParameters(command=server_command())) as client:
         result = await client.call_tool("bricscad_status", {})

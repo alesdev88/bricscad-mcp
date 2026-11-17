@@ -4,11 +4,31 @@ version = "0.1.0"
 description = "MCP server for controlling BricsCAD through a LISP bridge"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Aleš Dolenec" }]
+keywords = ["mcp", "bricscad", "cad", "dwg", "dxf", "lisp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics :: Editors :: Vector-Based",
+    "Topic :: Scientific/Engineering",
+]
 dependencies = [
     "mcp>=2.3,<3",
     "platformdirs>=4.2",
     "psutil>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/alesdev88/bricscad-mcp"
+Issues = "https://github.com/alesdev88/bricscad-mcp/issues"
 
 [project.scripts]
 bricscad-mcp = "bricscad_mcp.server:main"
@@ -25,6 +45,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bricscad_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/bricscad_mcp", "tests", "README.md", "LICENSE", "manifest.json", "server.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -102,6 +102,13 @@ def test_env_version_selects(monkeypatch):
         select_installation(Only25())
 
 
+def test_blank_env_settings_count_as_unset(monkeypatch):
+    # An install dialog, such as Claude Desktop's for the MCPB bundle, passes blank fields as "".
+    monkeypatch.setenv("BRICSCAD_EXECUTABLE", "")
+    monkeypatch.setenv("BRICSCAD_VERSION", " ")
+    assert select_installation(Only25()).version == "25"
+
+
 def test_explicit_version_beats_env(monkeypatch):
     monkeypatch.delenv("BRICSCAD_EXECUTABLE", raising=False)
     monkeypatch.setenv("BRICSCAD_VERSION", "99")
