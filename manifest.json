@@ -146,6 +146,10 @@
     {
       "name": "bricscad_preview_image",
       "description": "Return a PNG of the current drawing, to check work by eye. The drawing is not changed."
+    },
+    {
+      "name": "bricscad_batch_run",
+      "description": "Run one job on many drawings, one at a time, and report a result per file. Try dry_run first."
     }
   ],
   "user_config": {
