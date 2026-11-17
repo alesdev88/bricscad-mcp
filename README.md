@@ -1,11 +1,12 @@
 # BricsCAD MCP
 
-An MCP server that lets Claude, or any MCP client, read, audit, edit, plot and export drawings in BricsCAD.
+An MCP server that lets Claude, or any MCP client, read, audit, edit, plot and export drawings in BricsCAD,
+one at a time or in batches.
 It starts its own BricsCAD window and controls it through a small LISP listener, so it works
 at every licence level, including Lite, and doesn't need Windows COM.
 
-Status: Phases 1 to 3 of 4. Reading, auditing, drawing and editing, plotting and export work. Batch
-jobs are planned.
+Status: all four phases are built: reading and auditing, drawing and editing, plotting and export,
+and batch jobs.
 
 ## Platform support
 
@@ -16,8 +17,8 @@ jobs are planned.
 | Linux | CI | Not run: no test machine yet | Experimental |
 
 A platform becomes Supported only when the real BricsCAD tests pass on it. CI has no BricsCAD.
-The plot and export tools (`bricscad_export_dxf`, `bricscad_plot_pdf`, `bricscad_preview_image`) have
-so far passed them on macOS only; on Windows they are untested.
+The plot, export and batch tools (`bricscad_export_dxf`, `bricscad_plot_pdf`, `bricscad_preview_image`,
+`bricscad_batch_run`) have so far passed them on macOS only; on Windows they are untested.
 The Linux install location is unverified, so set `BRICSCAD_EXECUTABLE` if yours is not found.
 
 ## Install
@@ -128,6 +129,7 @@ claude mcp add bricscad -- uv --directory "/full/path/to/bricscad-mcp" run brics
 | `bricscad_export_dxf` | Writes the drawing as DXF, R12 or 2000 to 2018 |
 | `bricscad_plot_pdf` | Plots the model or a sheet to PDF, with paper, orientation, area, scale and plot style |
 | `bricscad_preview_image` | Returns a PNG of the model, a sheet or a window, so the client can check its work |
+| `bricscad_batch_run` | Runs one job on up to 500 drawings: audit, find text, export DXF, plot PDF (one sheet or every sheet), save copies, or LISP code |
 | `bricscad_run_lisp` | Runs LISP for anything the other tools don't cover |
 
 List tools take `limit` and `offset` and report `total`. The default limit is 200 and the maximum
@@ -147,6 +149,9 @@ is 2000.
   call goes through your client's tool approval.
 - **Timeouts.** If a dialog blocks BricsCAD, the call fails after its timeout (30 seconds by default)
   and says to check the window.
+- **Batches.** Run `bricscad_batch_run` with `dry_run=true` first to see what it would do. A failed
+  file doesn't stop the batch, but a timeout does, because a dialog may be blocking BricsCAD. Afterwards
+  the current drawing may be another open drawing. A batch takes up to 500 drawings per call.
 
 ## Safety
 
@@ -165,6 +170,9 @@ is 2000.
 - Exporting, plotting and previews never change the drawing, not even its modified state. They refuse
   an existing file without `overwrite=true`, never write over an open drawing, and replace a file only
   once the new one is complete, with no `.bak`.
+- Batch jobs open their drawings read-only and never write them unless the output folder is their own
+  folder and `overwrite=true`. Drawings already open in BricsCAD are refused, and each output replaces
+  a file only once it is complete.
 
 ## Environment variables
 
