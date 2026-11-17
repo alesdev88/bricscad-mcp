@@ -6,6 +6,7 @@ import ezdxf
 import pytest
 
 from bricscad_mcp.errors import BricsCADError
+from bricscad_mcp.lispgen import lisp_path
 from bricscad_mcp.tools import edit, export
 from bricscad_mcp.tools.drawing import drawing_info
 from real.helpers import entity_count, line_at
@@ -143,6 +144,8 @@ def test_preview_of_the_model_is_a_png(drawing):
 def test_preview_of_an_unused_sheet_adds_nothing(real_session, drawing):
     drawing.send('(command "_.LAYOUT" "_N" "Fresh")')
     edit.save_drawing(drawing, overwrite=True)
+    assert drawing.send('(getvar "CTAB")') != "Fresh"
+    assert drawing.send('(ssget "_X" (list (cons 0 "VIEWPORT") (cons 410 "Fresh")))') is None
     before = (entity_count(real_session), drawing.send('(getvar "CTAB")'))
     png = export.preview_image(drawing, preview_dir(drawing), layout="fresh")
     assert png.startswith(b"\x89PNG")
@@ -163,3 +166,23 @@ def test_preview_of_an_unknown_layout_fails_cleanly(drawing):
 
 def preview_dir(bridge):
     return bridge.queue_dir.parent / "previews"
+
+
+MODEL_ANSWERS_WITHOUT_SHADE_PLOT = '(list "_Y" "Model" "Print As PDF.pc3" "" "_M" "" "_N" "_E" "_F" "_C" "_Y" "" "_Y")'
+
+
+def test_a_plot_question_missing_from_the_answers_writes_nothing(drawing, tmp_path):
+    # As if a BricsCAD version asked one question fewer: the file name must not go to the wrong question.
+    target = tmp_path / "x.pdf"
+    with pytest.raises(BricsCADError, match="file name"):
+        drawing.send(f"(mcp:plot-run {MODEL_ANSWERS_WITHOUT_SHADE_PLOT} {lisp_path(target)})")
+    assert drawing.send('(getvar "CMDACTIVE")') == 0
+    assert sorted(p.name for p in tmp_path.iterdir() if p.suffix.lower() == ".pdf") == []
+
+
+def test_upper_case_extensions(drawing, tmp_path):
+    export.export_dxf(drawing, str(tmp_path / "OUT.DXF"))
+    export.plot_pdf(drawing, str(tmp_path / "OUT.PDF"))
+    assert ezdxf.readfile(tmp_path / "OUT.DXF").dxfversion == "AC1032"
+    assert (tmp_path / "OUT.PDF").read_bytes().startswith(b"%PDF")
+    assert sorted(p.name for p in tmp_path.iterdir() if p.name.upper().startswith(("OUT", ".OUT"))) == ["OUT.DXF", "OUT.PDF"]

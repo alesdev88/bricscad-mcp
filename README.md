@@ -16,6 +16,8 @@ jobs are planned.
 | Linux | CI | Not run: no test machine yet | Experimental |
 
 A platform becomes Supported only when the real BricsCAD tests pass on it. CI has no BricsCAD.
+The plot and export tools (`bricscad_export_dxf`, `bricscad_plot_pdf`, `bricscad_preview_image`) have
+so far passed them on macOS only; on Windows they are untested.
 The Linux install location is unverified, so set `BRICSCAD_EXECUTABLE` if yours is not found.
 
 ## Install

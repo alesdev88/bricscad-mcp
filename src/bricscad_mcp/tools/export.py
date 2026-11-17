@@ -35,6 +35,8 @@ def check_output_target(path: str, suffix: str, state: dict[str, Any], overwrite
         raise BricsCADError(f"This is a folder, not a file: {target}")
     if not target.parent.is_dir():
         raise BricsCADError(f"The folder does not exist: {target.parent}")
+    if not os.access(target.parent, os.W_OK):
+        raise SafetyRefused(f"The folder is not writable: {target.parent}")
     open_files = [state["path"]] if state["titled"] else []
     open_files += state["other_open"]
     if any(Path(known).is_absolute() and is_same_file(known, target) for known in open_files):
@@ -53,7 +55,8 @@ def write_through_temporary(target: Path, produce: Callable[[Path], None]) -> di
     An existing target changes only once the new file is complete, and BricsCAD leaves no .bak,
     which could otherwise replace another file's backup.
     """
-    temporary = target.with_name(f".{target.stem}.mcp-{uuid.uuid4().hex[:8]}{target.suffix}")
+    # A lower-case suffix, so BricsCAD never adds its own to a name it does not recognise.
+    temporary = target.with_name(f".{target.stem}.mcp-{uuid.uuid4().hex[:8]}{target.suffix.lower()}")
     try:
         produce(temporary)
         if not temporary.exists() or temporary.stat().st_size == 0:

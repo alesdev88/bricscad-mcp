@@ -213,3 +213,20 @@ async def test_preview_refuses_a_bad_window(started, fake):
     result = await started.call_tool("bricscad_preview_image", {"window": [0, 0, 0, 5]})
     assert result.is_error
     assert [r for r in fake.requests if r.startswith("(mcp:preview-image")] == []
+
+
+async def test_export_refuses_a_folder_it_cannot_write(started, exporting, folder):
+    folder.chmod(0o555)
+    try:
+        result = await started.call_tool("bricscad_export_dxf", {"path": str(folder / "out.dxf")})
+    finally:
+        folder.chmod(0o755)
+    assert result.is_error and "not writable" in result.content[0].text
+    assert [r for r in exporting.requests if "export-dxf" in r] == []
+
+
+async def test_the_temporary_name_has_a_lower_case_suffix(started, exporting, folder):
+    result = await started.call_tool("bricscad_export_dxf", {"path": str(folder / "OUT.DXF")})
+    assert not result.is_error
+    assert re.search(r'/\.OUT\.mcp-[0-9a-f]{8}\.dxf"', exporting.requests[-1])
+    assert [p.name for p in folder.iterdir()] == ["OUT.DXF"]

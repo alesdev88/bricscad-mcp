@@ -60,8 +60,8 @@
 )
 
 ;; A rejected answer makes BricsCAD ask again, and the next answer would then go to the wrong
-;; question. So answers go one at a time and stop there.
-(defun mcp:answer-all (answers / answer prompt)
+;; question. So answers go one at a time and stop there. more: T when answers follow these.
+(defun mcp:answer-each (answers more / answer prompt)
   (while answers
     (setq answer (car answers)
           answers (cdr answers))
@@ -71,10 +71,14 @@
       ((mcp:rejected-p answer prompt)
        (mcp:cancel-command)
        (mcp:fail (strcat "BricsCAD refused an answer: " prompt)))
-      ((and answers (= (getvar "CMDACTIVE") 0))
+      ((and (or answers more) (= (getvar "CMDACTIVE") 0))
        (mcp:fail (strcat "BricsCAD ended the command early: " prompt)))
     )
   )
+)
+
+(defun mcp:answer-all (answers / prompt)
+  (mcp:answer-each answers nil)
   (if (> (getvar "CMDACTIVE") 0)
     (progn
       (setq prompt (getvar "LASTPROMPT"))
@@ -98,8 +102,7 @@
     (mcp:fail "The model has no layout area to plot. Use extents or window.")
   )
   (if (null scale) (setq scale (if model "fit" "1:1")))
-  (command "_.-PLOT")
-  (mcp:answer-all
+  (mcp:plot-run
     (append
       (list "_Y" layout "Print As PDF.pc3" (if paper paper "") "_M"
             (cond ((null landscape) "") ((= landscape 1) "_L") (T "_P"))
@@ -113,10 +116,32 @@
             (if (= area "layout") "" "_C")
             "_Y" (if style-table style-table "") "_Y")
       (if model (list "") (list "_N" "_Y" "_N"))
-      (list path "_N" "_Y")
     )
+    path
   )
   layout
+)
+
+;; head: every answer before the file name. Answers match questions by position, so the file
+;; name is checked: BricsCAD echoes it when the question takes a file name, and any other question
+;; rejects it. Without this, one question fewer would plot to BricsCAD's default file name.
+(defun mcp:plot-run (head path / prompt)
+  (command "_.-PLOT")
+  (mcp:answer-each head T)
+  (mcp:answer-each (list path) T)
+  (setq prompt (getvar "LASTPROMPT"))
+  (if (not (mcp:ends-with-p prompt path))
+    (progn
+      (mcp:cancel-command)
+      (mcp:fail (strcat "BricsCAD did not take the file name where it was expected: " prompt))
+    )
+  )
+  (mcp:answer-all (list "_N" "_Y"))
+)
+
+(defun mcp:ends-with-p (text tail)
+  (and (>= (strlen text) (strlen tail))
+       (= (substr text (1+ (- (strlen text) (strlen tail)))) tail))
 )
 
 ;; ---- Previews ----
