@@ -185,6 +185,29 @@ Probed on temporary drawings, before the draw and edit tools were written.
 | `_.QSAVE` on a read-only drawing ends in `Function cancelled`, file unchanged. `_.SAVEAS` from one writes the copy and the document becomes writable under the new name | Refuse in-place save when read-only |
 | `DWGTITLED` is 0 on a new drawing | Unnamed drawings need a path |
 
+## Found while planning Phase 3, 17.11.2026
+
+Probed on temporary drawings on V26.1.6 Lite, macOS, before the plot and export tools were written.
+
+| Behaviour | Consequence |
+|---|---|
+| `(command "_.DXFOUT" path "_V" version "")` writes a DXF with no dialog. Versions: R9, R10, R11, R12, R13, R14, LT95, 2000, 2004, 2007, 2010, 2013, 2018 (default). The empty answer takes the default precision, 6 | One request runs the whole command; the tool offers R12 and 2000 to 2018 |
+| A command left waiting at the end of a request takes the listener's `_.DELAY` as its next answer | Every command finishes, or is cancelled, inside its request |
+| DXFOUT keeps the drawing's name, read-only state and `DBMOD` 0. `č š ž` arrive as UTF-8 from 2007 on, and as `\U+010D` in R12 | Export never touches the drawing |
+| DXFOUT over an existing file replaces it with no prompt and leaves `<name>.bak` beside it, which can replace another file's backup. To a missing folder it writes nothing and says nothing | Write to a fresh temporary name in the target folder, then replace the target from Python |
+| `PNGOUT path` writes the current view, at the window's pixel size, with no dialog and no further prompt. Over an existing file it prompts. The model has a black background | Previews go to a new file each time |
+| `_.ZOOM` sets `DBMOD` 16, so the drawing reads as modified. `acad-push-dbmod` and `acad-pop-dbmod` exist and restore the flag | Preview and plot keep the modified flag as it was |
+| Making a never-used layout current adds its viewports (2 entities). `_.UNDO _Mark` then `_Back` removes them and returns to the previous layout and view; the PNG stays | Previews of a sheet run between a mark and `_Back` |
+| `-PLOT` of a sheet asks 3 more questions than the model: scale lineweights, paper space last, hide paper space objects. It has no shade plot question. Plot area defaults to Layout and scale to 1:1 | Two answer lists, one for the model and one for sheets |
+| `-PLOT` sets `DBMOD` 5 even when answering No to saving layout changes. The layout's page setup stays `None`, so nothing is stored | Plotting restores the modified flag |
+| `-PLOT` replaces an existing PDF with no prompt. Plotting a sheet does not add its viewports | The server applies the `overwrite` rule itself |
+| An unknown device, paper size or style table re-asks the same question, with `not found` in `LASTPROMPT`. `(command)` then cancels cleanly | Answer one at a time and stop at `not found` |
+| Paper sizes go by BricsCAD's name, such as `ISO A3 (297.00 x 420.00 MM)`. Canonical names with underscores and other letter case are not found. `A3` was accepted and gave A3 | The tool passes the name through and reports what BricsCAD rejects |
+| `Print As PDF.pc3` is the only plotter configuration on this Mac. `monochrome.ctb` is found by name | Device is fixed; style table is optional |
+| Setting a layout's `ConfigName` with VLA and reading `GetCanonicalMediaNames` crashed BricsCAD | Do not list paper sizes through VLA |
+| Opening, exporting and closing 10 drawings in one request took 1.7 s. After `vla-close` the current drawing is whichever BricsCAD picks, and `vla-activate` of an open drawing did not switch to it. `vla-get-name` returned the full path for one document | Batch reports the current drawing at the end rather than restoring it |
+| A stale `.dwl` lock beside a drawing showed no dialog on opening | none |
+
 ## Open points
 
 - `FILEDIA` read `0` at the start of every `-b` run. Whether that is the user's stored value or

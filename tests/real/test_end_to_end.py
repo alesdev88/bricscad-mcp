@@ -102,8 +102,13 @@ async def test_stdio_server_full_edit_flow(tmp_path, no_shared_session):
 
         info = await ok("bricscad_save_drawing", {"path": str(copy)})
         assert info["name"] == "kopija.dwg" and info["read_only"] is False and info["modified"] is False
+        plotted = await ok("bricscad_plot_pdf", {"path": str(tmp_path / "kopija.pdf")})
+        assert plotted["layout"] == "Model"
+        preview = await client.call_tool("bricscad_preview_image", {})
+        assert not preview.is_error and preview.content[0].type == "image"
         assert (await ok("bricscad_stop"))["forced"] is False
 
     assert hashlib.sha256(source.read_bytes()).hexdigest() == digest
     assert copy.exists()
+    assert (tmp_path / "kopija.pdf").read_bytes().startswith(b"%PDF")
     assert untitled_files() == before_untitled

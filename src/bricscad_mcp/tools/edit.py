@@ -236,7 +236,7 @@ async def bricscad_create_entities(
     return await _run(create_entities, entities, layout, timeout)
 
 
-def _is_same_file(known: str, target: Path) -> bool:
+def is_same_file(known: str, target: Path) -> bool:
     """True however the two are spelled: through a link, in another letter case or Unicode form."""
     other = Path(known)
     if other.exists() and target.exists():
@@ -247,15 +247,15 @@ def _is_same_file(known: str, target: Path) -> bool:
 def _check_save_target(target: Path, state: dict[str, Any], overwrite: bool) -> None:
     if target.suffix.lower() != ".dwg":
         raise BricsCADError(
-            f"Only .dwg files can be saved here: {target}. DXF export comes with bricscad_export_dxf in Phase 3."
+            f"Only .dwg files can be saved here: {target}. Use bricscad_export_dxf for DXF."
         )
     if target.is_dir():
         raise BricsCADError(f"This is a folder, not a file: {target}")
     if not target.parent.is_dir():
         raise BricsCADError(f"The folder does not exist: {target.parent}")
-    if state["titled"] and state["read_only"] and _is_same_file(state["path"], target):
+    if state["titled"] and state["read_only"] and is_same_file(state["path"], target):
         raise SafetyRefused("This drawing is read-only, so it must be saved to a new path.")
-    if any(Path(path).is_absolute() and _is_same_file(path, target) for path in state["other_open"]):
+    if any(Path(path).is_absolute() and is_same_file(path, target) for path in state["other_open"]):
         raise SafetyRefused(f"{target} is open as another drawing. Close it first.")
     if target.exists():
         if not overwrite:
@@ -275,7 +275,7 @@ def save_drawing(
         target = Path(path).expanduser().absolute()
         _check_save_target(target, state, overwrite)
         info = bridge.send(call("mcp:save-as", target.as_posix(), overwrite), timeout)
-        if not _is_same_file(info["path"], target):
+        if not is_same_file(info["path"], target):
             raise BricsCADError(f"BricsCAD did not save to {target}. It reports {info['path']}.")
         return info
     if not state["titled"]:
