@@ -134,6 +134,10 @@
     {
       "name": "bricscad_save_drawing",
       "description": "Save the current drawing. Returns the same details as bricscad_drawing_info."
+    },
+    {
+      "name": "bricscad_export_dxf",
+      "description": "Write the current drawing as a DXF file. The drawing keeps its name and state."
     }
   ],
   "user_config": {
