@@ -2,6 +2,7 @@
 
 import hashlib
 
+import ezdxf
 import pytest
 
 from bricscad_mcp.lispgen import call
@@ -84,3 +85,36 @@ def test_an_open_source_is_refused(real_session, sources):
         real_session.bridge.send(
             "(vlax-for d (mcp:documents) (if (wcmatch (strcase (vla-get-fullname d)) \"*/B.DWG\") (vla-close d :vlax-false)))"
         )
+
+
+def test_export_dxf_job(real_session, sources, tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    before = digests(sources)
+    result = run(real_session, "export_dxf", folder=str(sources), output_folder=str(out))
+    assert result["succeeded"] == 3
+    assert [ezdxf.readfile(out / f"{n}.dxf").dxfversion for n in "abc"] == ["AC1032"] * 3
+    assert digests(sources) == before
+
+
+def test_plot_pdf_job_every_sheet(real_session, sources, tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    result = run(real_session, "plot_pdf", folder=str(sources), output_folder=str(out), options={"layout": "*"})
+    assert result["succeeded"] == 3 and result["files"][0]["result"] == ["Layout1", "Layout2"]
+    names = sorted(p.name for p in out.iterdir())
+    assert names == sorted(f"{n}-{sheet}.pdf" for n in "abc" for sheet in ("Layout1", "Layout2"))
+    assert all((out / name).read_bytes().startswith(b"%PDF") for name in names)
+
+
+def test_save_as_job_replaces_sources_only_with_overwrite(real_session, sources):
+    before = digests(sources)
+    refused = run(real_session, "save_as", folder=str(sources), output_folder=str(sources))
+    assert refused["refused"] == 3 and digests(sources) == before
+    count = document_count(real_session)
+    done = run(real_session, "save_as", folder=str(sources), output_folder=str(sources), overwrite=True)
+    assert done["succeeded"] == 3
+    assert sorted(p.name for p in sources.iterdir()) == ["a.dwg", "b.dwg", "c.dwg"]
+    assert document_count(real_session) == count
+    out = run(real_session, "find_text", folder=str(sources), options={"query": "Soba"})
+    assert [f["result"]["total"] for f in out["files"]] == [0, 1, 0]

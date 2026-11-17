@@ -158,3 +158,78 @@ async def test_audit_and_find_text_send_their_workers(started, fake, src):
         f'(mcp:batch-file "{path}" "mcp:audit-report" (list nil 10))',
         f'(mcp:batch-file "{path}" "mcp:find-text" (list "Soba" nil 50 0))',
     ]
+
+
+def strings(expr):
+    return re.findall(r'"((?:[^"\\]|\\.)*)"', expr)
+
+
+def writes_third_string(content):
+    """A fake mcp:batch-file whose worker writes `content` to the temporary path it was given."""
+
+    def answer(expr):
+        with open(strings(expr)[2], "wb") as file:
+            file.write(content)
+        return True
+
+    return answer
+
+
+async def test_export_dxf_job_writes_each_output_through_a_temporary(started, fake, src, tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    fake.responses["mcp:batch-file"] = writes_third_string(b"0\nSECTION\n")
+    result = (await run(started, job={"type": "export_dxf"}, folder=str(src), output_folder=str(out))).structured_content
+    assert [f["status"] for f in result["files"]] == ["ok"] * 3
+    assert sorted(p.name for p in out.iterdir()) == ["a.dxf", "b.dxf", "c.dxf"]
+    first = batch_calls(fake)[0]
+    assert re.fullmatch(
+        r'\(mcp:batch-file "[^"]+/src/a\.dwg" "mcp:export-dxf-now" \(list "[^"]+/out/\.a\.mcp-[0-9a-f]{8}\.dxf" "2018"\)\)',
+        first,
+    )
+    assert result["files"][0]["outputs"] == [(out / "a.dxf").as_posix()]
+
+
+async def test_an_existing_output_is_refused_without_overwrite(started, fake, src, tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "b.dxf").write_bytes(b"old")
+    fake.responses["mcp:batch-file"] = writes_third_string(b"new")
+    result = (await run(started, job={"type": "export_dxf"}, folder=str(src), output_folder=str(out))).structured_content
+    assert [f["status"] for f in result["files"]] == ["ok", "refused", "ok"]
+    assert (out / "b.dxf").read_bytes() == b"old"
+
+
+async def test_save_as_into_the_source_folder_needs_overwrite(started, fake, src):
+    fake.responses["mcp:batch-file"] = writes_third_string(b"AC1032 new")
+    refused = (await run(started, job={"type": "save_as"}, folder=str(src), output_folder=str(src))).structured_content
+    assert [f["status"] for f in refused["files"]] == ["refused"] * 3
+    assert batch_calls(fake) == []
+    done = (await run(started, job={"type": "save_as"}, folder=str(src), output_folder=str(src), overwrite=True)).structured_content
+    assert [f["status"] for f in done["files"]] == ["ok"] * 3
+    assert (src / "a.dwg").read_bytes() == b"AC1032 new"
+    assert sorted(p.name for p in src.iterdir()) == ["a.dwg", "b.dwg", "c.dwg"]
+
+
+async def test_plot_pdf_job_checks_its_options_before_running(started, fake, src, tmp_path):
+    (tmp_path / "out").mkdir()
+    result = await run(started, job={"type": "plot_pdf", "scale": "1/100"}, folder=str(src), output_folder=str(tmp_path / "out"))
+    assert result.is_error and batch_calls(fake) == []
+
+
+async def test_plot_every_sheet_moves_each_pdf_to_its_name(started, fake, src, tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+
+    def answer(expr):
+        folder = strings(expr)[2]
+        for n in (1, 2):
+            with open(f"{folder}/{n}.pdf", "wb") as file:
+                file.write(b"%PDF")
+        return ["Layout1", "A/B"]
+
+    fake.responses["mcp:batch-file"] = answer
+    result = (await run(started, job={"type": "plot_pdf", "layout": "*"}, files=[str(src / "a.dwg")], output_folder=str(out))).structured_content
+    assert result["files"][0]["status"] == "ok"
+    assert sorted(p.name for p in out.iterdir()) == ["a-A_B.pdf", "a-Layout1.pdf"]
+    assert result["files"][0]["result"] == ["Layout1", "A/B"]

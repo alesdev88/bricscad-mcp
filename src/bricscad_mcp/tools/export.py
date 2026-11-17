@@ -115,6 +115,25 @@ def _check_scale(scale: str | None) -> None:
         raise BricsCADError(f'scale must be "fit" or plotted millimetres to drawing units, such as "1:100": {scale}')
 
 
+def check_plot_options(
+    layout: str | None,
+    paper: str | None,
+    area: str | None,
+    window: list[float] | None,
+    scale: str | None,
+    style_table: str | None,
+) -> list[float] | None:
+    """Refuse plot options BricsCAD would misread. Returns the checked window."""
+    for name, value in (("layout", layout), ("paper", paper), ("style_table", style_table)):
+        _check_answer(name, value)
+    _check_scale(scale)
+    if area == "window" and window is None:
+        raise BricsCADError('area="window" needs window=[x1, y1, x2, y2].')
+    if window is not None and area != "window":
+        raise BricsCADError('window is only used with area="window".')
+    return check_window(window)
+
+
 def plot_pdf(
     bridge: Bridge,
     path: str,
@@ -128,14 +147,7 @@ def plot_pdf(
     overwrite: bool = False,
     timeout: float = 120.0,
 ) -> dict[str, Any]:
-    for name, value in (("layout", layout), ("paper", paper), ("style_table", style_table)):
-        _check_answer(name, value)
-    _check_scale(scale)
-    if area == "window" and window is None:
-        raise BricsCADError('area="window" needs window=[x1, y1, x2, y2].')
-    if window is not None and area != "window":
-        raise BricsCADError('window is only used with area="window".')
-    window = check_window(window)
+    window = check_plot_options(layout, paper, area, window, scale, style_table)
     target = check_output_target(path, ".pdf", bridge.send(call("mcp:save-state")), overwrite)
     side = None if landscape is None else int(landscape)
     plotted: list[str] = []

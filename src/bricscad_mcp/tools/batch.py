@@ -1,6 +1,9 @@
 """One job across many drawings. Sources open read-only and are written only with overwrite=true."""
 
 import os
+import re
+import shutil
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal, Union
@@ -14,7 +17,7 @@ from ..server import mcp, session
 from . import DESTRUCTIVE, MAX_LIMIT, in_thread
 from .drawing import check_drawing_file
 from .edit import is_same_file
-from .export import DxfVersion, PlotArea, check_output_target
+from .export import DxfVersion, PlotArea, check_output_target, check_plot_options, write_through_temporary
 from .shapes import Strict
 
 MAX_FILES = 500
@@ -92,6 +95,7 @@ class FilePlan:
     source: Path
     target: Path | None = None
     refused: str | None = None
+    folder: Path | None = None  # where a writing job writes
 
 
 def list_sources(
@@ -120,6 +124,9 @@ def list_sources(
 
 
 def plan(sources: list[Path], job: Job, output_folder: str | None, overwrite: bool) -> list[FilePlan]:
+    if isinstance(job, PlotPdfJob):
+        layout = None if job.layout == "*" else job.layout
+        job.window = check_plot_options(layout, job.paper, job.area, job.window, job.scale, job.style_table)
     suffix = output_suffix(job)
     if suffix is None:
         if output_folder is not None:
@@ -133,8 +140,8 @@ def plan(sources: list[Path], job: Job, output_folder: str | None, overwrite: bo
     if not os.access(out, os.W_OK):
         raise SafetyRefused(f"The output folder is not writable: {out}")
     if every_sheet(job):
-        return [FilePlan(source) for source in sources]
-    plans = [FilePlan(source, out / f"{source.stem}{suffix}") for source in sources]
+        return [FilePlan(source, folder=out) for source in sources]
+    plans = [FilePlan(source, out / f"{source.stem}{suffix}", folder=out) for source in sources]
     _refuse_shared_targets(plans)
     for item in plans:
         try:
@@ -153,17 +160,72 @@ def _refuse_shared_targets(plans: list[FilePlan]) -> None:
         seen[key] = item.source
 
 
-def _reader_call(job: Job) -> tuple[str, list[Any]]:
+def _plot_args(job: PlotPdfJob) -> list[Any]:
+    side = None if job.landscape is None else int(job.landscape)
+    return [job.paper, side, job.area, job.window, job.scale, job.style_table]
+
+
+def _worker(job: Job, temporary: Path | None) -> tuple[str, list[Any]]:
+    """The LISP worker and its arguments. temporary: where a writing job writes."""
     if isinstance(job, AuditJob):
         return "mcp:audit-report", [job.allowed_layers, job.sample_limit]
     if isinstance(job, FindTextJob):
         return "mcp:find-text", [job.query, job.case_sensitive, job.limit, 0]
+    if isinstance(job, ExportDxfJob):
+        return "mcp:export-dxf-now", [temporary.as_posix(), job.version]
+    if isinstance(job, PlotPdfJob):
+        return "mcp:plot-pdf-now", [temporary.as_posix(), job.layout, *_plot_args(job)]
+    if isinstance(job, SaveAsJob):
+        return "mcp:save-copy", [temporary.as_posix()]
     raise BricsCADError(f"The {job.type} job is not available yet.")
 
 
-def _run_one(bridge: Bridge, job: Job, item: FilePlan, timeout: float) -> tuple[Any, list[str]]:
-    worker, args = _reader_call(job)
-    return bridge.send(call("mcp:batch-file", item.source.as_posix(), worker, args), timeout), []
+def _send(bridge: Bridge, item: FilePlan, worker: str, args: list[Any], timeout: float) -> Any:
+    return bridge.send(call("mcp:batch-file", item.source.as_posix(), worker, args), timeout)
+
+
+def _run_one(
+    bridge: Bridge, job: Job, item: FilePlan, state: dict[str, Any], overwrite: bool, timeout: float
+) -> tuple[Any, list[str]]:
+    suffix = output_suffix(job)
+    if suffix is None:
+        return _send(bridge, item, *_worker(job, None), timeout), []
+    if every_sheet(job):
+        return _plot_every_sheet(bridge, job, item, state, overwrite, timeout)
+    # Checked again now that BricsCAD says which drawings are open.
+    check_output_target(str(item.target), suffix, state, overwrite)
+    results: list[Any] = []
+    write_through_temporary(
+        item.target, lambda temporary: results.append(_send(bridge, item, *_worker(job, temporary), timeout))
+    )
+    return (results[0] if isinstance(job, PlotPdfJob) else None), [item.target.as_posix()]
+
+
+_UNSAFE = re.compile(r'[<>:"/\\|?*]')
+
+
+def _plot_every_sheet(
+    bridge: Bridge, job: PlotPdfJob, item: FilePlan, state: dict[str, Any], overwrite: bool, timeout: float
+) -> tuple[Any, list[str]]:
+    out = item.folder
+    folder = out / f".mcp-{uuid.uuid4().hex[:8]}"
+    folder.mkdir()
+    try:
+        sheets = _send(bridge, item, "mcp:plot-sheets", [folder.as_posix(), *_plot_args(job)], timeout)
+        moves = [
+            (folder / f"{n}.pdf", out / f"{item.source.stem}-{_UNSAFE.sub('_', sheet)}.pdf")
+            for n, sheet in enumerate(sheets, start=1)
+        ]
+        for _, target in moves:
+            check_output_target(str(target), ".pdf", state, overwrite)
+        for plotted, target in moves:
+            if not plotted.exists() or plotted.stat().st_size == 0:
+                raise BricsCADError(f"BricsCAD did not write {target}.")
+        for plotted, target in moves:
+            os.replace(plotted, target)
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    return sheets, [target.as_posix() for _, target in moves]
 
 
 def _entry(item: FilePlan, status: str, outputs: list[str] | None = None, **fields: Any) -> dict[str, Any]:
@@ -206,7 +268,7 @@ def batch_run(
                 entries.append(_entry(item, "refused", error="It is open in BricsCAD. Close it first, or leave it out."))
             else:
                 try:
-                    result, outputs = _run_one(bridge, job, item, timeout)
+                    result, outputs = _run_one(bridge, job, item, state, overwrite, timeout)
                     entries.append(_entry(item, "ok", outputs, result=result))
                 except (BridgeTimeout, ProcessDied) as error:
                     stopped = str(error)

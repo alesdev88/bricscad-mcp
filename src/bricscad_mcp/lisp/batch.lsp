@@ -24,3 +24,28 @@
   )
   result
 )
+
+;; ---- Workers that write. Each writes to a temporary path that Python then moves. ----
+
+(defun mcp:save-copy (path)
+  (command "_.SAVEAS" "" path)
+  (if (or (> (getvar "CMDACTIVE") 0) (not (findfile path)))
+    (progn
+      (mcp:cancel-command)
+      (mcp:fail (strcat "BricsCAD did not save " path "."))
+    )
+  )
+  T
+)
+
+;; Plots every sheet to <folder>/<n>.pdf, n from 1, and returns the sheet names in that order.
+(defun mcp:plot-sheets (folder paper landscape area window scale style-table / n names)
+  (if (null (layoutlist)) (mcp:fail "This drawing has no sheets."))
+  (setq n 0)
+  (foreach name (layoutlist)
+    (setq n (1+ n))
+    (mcp:plot-pdf-now (strcat folder "/" (itoa n) ".pdf") name paper landscape area window scale style-table)
+    (setq names (cons name names))
+  )
+  (reverse names)
+)
