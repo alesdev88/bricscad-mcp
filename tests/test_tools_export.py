@@ -1,4 +1,6 @@
+import base64
 import re
+from pathlib import Path
 
 import pytest
 
@@ -182,3 +184,32 @@ async def test_plot_pdf_refuses_an_existing_file_without_overwrite(started, plot
     (folder / "out.pdf").write_bytes(b"old")
     result = await started.call_tool("bricscad_plot_pdf", {"path": str(folder / "out.pdf")})
     assert result.is_error and "overwrite=true" in result.content[0].text and plot_calls(plotting) == []
+
+
+PNG = b"\x89PNG\r\n\x1a\nfake"
+
+
+async def test_preview_returns_the_png_and_removes_the_file(started, fake):
+    fake.responses["mcp:preview-image"] = writes(PNG)
+    result = await started.call_tool("bricscad_preview_image", {"layout": "Layout1", "window": [0, 0, 10, 5]})
+    assert not result.is_error
+    image = result.content[0]
+    assert image.type == "image" and image.mime_type == "image/png"
+    assert base64.b64decode(image.data) == PNG
+    request = [r for r in fake.requests if r.startswith("(mcp:preview-image")][-1]
+    assert request.endswith('.png" "Layout1" (list 0.0 0.0 10.0 5.0))')
+    written = Path(first_string(request))
+    assert written.parent.name == "previews" and not written.exists()
+    assert list(written.parent.iterdir()) == []
+
+
+async def test_preview_without_a_png_is_an_error(started, fake):
+    fake.responses["mcp:preview-image"] = True
+    result = await started.call_tool("bricscad_preview_image", {})
+    assert result.is_error and "no preview" in result.content[0].text.lower()
+
+
+async def test_preview_refuses_a_bad_window(started, fake):
+    result = await started.call_tool("bricscad_preview_image", {"window": [0, 0, 0, 5]})
+    assert result.is_error
+    assert [r for r in fake.requests if r.startswith("(mcp:preview-image")] == []

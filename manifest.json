@@ -142,6 +142,10 @@
     {
       "name": "bricscad_plot_pdf",
       "description": "Plot one layout of the current drawing to a PDF file, with Print As PDF.pc3. The drawing is not changed."
+    },
+    {
+      "name": "bricscad_preview_image",
+      "description": "Return a PNG of the current drawing, to check work by eye. The drawing is not changed."
     }
   ],
   "user_config": {

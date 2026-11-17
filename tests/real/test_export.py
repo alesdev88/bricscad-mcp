@@ -8,7 +8,7 @@ import pytest
 from bricscad_mcp.errors import BricsCADError
 from bricscad_mcp.tools import edit, export
 from bricscad_mcp.tools.drawing import drawing_info
-from real.helpers import line_at
+from real.helpers import entity_count, line_at
 
 pytestmark = pytest.mark.bricscad
 
@@ -133,3 +133,33 @@ def test_plot_pdf_replaces_an_existing_pdf_with_overwrite(drawing, tmp_path):
     target.write_bytes(b"old")
     export.plot_pdf(drawing, str(target), overwrite=True)
     assert target.read_bytes().startswith(b"%PDF")
+
+
+def test_preview_of_the_model_is_a_png(drawing):
+    png = export.preview_image(drawing, preview_dir(drawing))
+    assert png.startswith(b"\x89PNG") and drawing_info(drawing)["modified"] is False
+
+
+def test_preview_of_an_unused_sheet_adds_nothing(real_session, drawing):
+    drawing.send('(command "_.LAYOUT" "_N" "Fresh")')
+    edit.save_drawing(drawing, overwrite=True)
+    before = (entity_count(real_session), drawing.send('(getvar "CTAB")'))
+    png = export.preview_image(drawing, preview_dir(drawing), layout="fresh")
+    assert png.startswith(b"\x89PNG")
+    assert (entity_count(real_session), drawing.send('(getvar "CTAB")')) == before
+    assert drawing_info(drawing)["modified"] is False
+
+
+def test_preview_of_a_window(drawing):
+    assert export.preview_image(drawing, preview_dir(drawing), window=[0, 0, 50, 50]).startswith(b"\x89PNG")
+
+
+def test_preview_of_an_unknown_layout_fails_cleanly(drawing):
+    ctab = drawing.send('(getvar "CTAB")')
+    with pytest.raises(BricsCADError, match="No layout named Nope"):
+        export.preview_image(drawing, preview_dir(drawing), layout="Nope")
+    assert drawing.send('(getvar "CMDACTIVE")') == 0 and drawing.send('(getvar "CTAB")') == ctab
+
+
+def preview_dir(bridge):
+    return bridge.queue_dir.parent / "previews"

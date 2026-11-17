@@ -10,8 +10,10 @@ from typing import Any, Callable, Literal
 from ..bridge import Bridge
 from ..errors import BricsCADError, SafetyRefused
 from ..lispgen import call
-from ..server import mcp
-from . import DESTRUCTIVE
+from mcp.server.mcpserver import Image
+
+from ..server import mcp, session
+from . import DESTRUCTIVE, READ_ONLY, in_thread
 from .edit import is_same_file
 from .read import _run
 
@@ -173,3 +175,42 @@ async def bricscad_plot_pdf(
     overwrite: true allows replacing an existing file. It is replaced only once the new one is complete.
     """
     return await _run(plot_pdf, path, layout, paper, landscape, area, window, scale, style_table, overwrite, timeout)
+
+
+def preview_image(
+    bridge: Bridge,
+    preview_dir: Path,
+    layout: str | None = None,
+    window: list[float] | None = None,
+    timeout: float = 60.0,
+) -> bytes:
+    _check_answer("layout", layout)
+    window = check_window(window)
+    preview_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = preview_dir / f"{uuid.uuid4().hex}.png"
+    try:
+        bridge.send(call("mcp:preview-image", path.as_posix(), layout, window), timeout)
+        png = path.read_bytes() if path.exists() else b""
+    finally:
+        path.unlink(missing_ok=True)
+    if not png:
+        raise BricsCADError("BricsCAD made no preview image.")
+    return png
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def bricscad_preview_image(
+    layout: str | None = None, window: list[float] | None = None, timeout: float = 60.0
+) -> Image:
+    """Return a PNG of the current drawing, to check work by eye. The drawing is not changed.
+
+    layout: "Model" or a sheet name. Defaults to the current layout. The whole layout is shown.
+    window: [x1, y1, x2, y2] in drawing units, to show only that area.
+    The image is the size of the BricsCAD window. The model shows on black, as on screen.
+    """
+
+    def run() -> Image:
+        bridge = session().require_bridge()
+        return Image(data=preview_image(bridge, bridge.queue_dir.parent / "previews", layout, window, timeout), format="png")
+
+    return await in_thread(run)

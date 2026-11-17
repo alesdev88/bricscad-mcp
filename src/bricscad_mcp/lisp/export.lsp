@@ -118,3 +118,42 @@
   )
   layout
 )
+
+;; ---- Previews ----
+
+;; Making a sheet current for the first time adds its viewports, and zooming changes the view.
+;; Everything between the mark and _Back is undone, also on failure; the PNG stays.
+(defun mcp:preview-image (path layout window)
+  (mcp:keep-clean 'mcp:preview-image-now (list path layout window))
+)
+
+(defun mcp:preview-image-now (path layout window / result message)
+  (if layout (setq layout (mcp:layout-named layout)))
+  (command "_.UNDO" "_Mark")
+  (setq *mcp-pending-error* nil
+        result (vl-catch-all-apply 'mcp:preview-steps (list path layout window)))
+  (if (vl-catch-all-error-p result)
+    (setq message (cond (*mcp-pending-error*) ((vl-catch-all-error-message result))))
+  )
+  (mcp:cancel-command)
+  (command "_.UNDO" "_Back")
+  (if message
+    (progn
+      (setq *mcp-pending-error* message)
+      (exit)
+    )
+  )
+  T
+)
+
+(defun mcp:preview-steps (path layout window)
+  (if layout (setvar "CTAB" layout))
+  (if window
+    (command "_.ZOOM" "_W" (list (nth 0 window) (nth 1 window)) (list (nth 2 window) (nth 3 window)))
+    (command "_.ZOOM" "_E")
+  )
+  (command "_.PNGOUT" path)
+  (if (> (getvar "CMDACTIVE") 0)
+    (mcp:fail (strcat "BricsCAD did not finish the preview: " (getvar "LASTPROMPT")))
+  )
+)
