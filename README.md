@@ -66,6 +66,25 @@ Cursor, VS Code, Windsurf and other clients that take an `mcpServers` entry:
 
 `env` is optional. See [Environment variables](#environment-variables).
 
+#### On a network that inspects HTTPS
+
+Some office networks check HTTPS traffic with their own certificate. uv then can't download from
+PyPI unless it uses the system's certificates, and the first start fails with
+`invalid peer certificate: UnknownIssuer`, which a client may only report as a closed connection.
+Setting `UV_SYSTEM_CERTS` in your shell isn't always enough, because some clients start servers
+with only a few environment variables. Set it on the server entry instead:
+
+```bash
+claude mcp add -e UV_SYSTEM_CERTS=1 bricscad -- uvx bricscad-mcp
+```
+
+```bash
+codex mcp add bricscad --env UV_SYSTEM_CERTS=1 -- uvx bricscad-mcp
+```
+
+In an `mcpServers` entry, add `"UV_SYSTEM_CERTS": "1"` to `env`. The Claude Desktop bundle downloads
+nothing, so it doesn't need this.
+
 ### From source
 
 ```bash
