@@ -2,9 +2,9 @@
   "manifest_version": "0.4",
   "name": "bricscad-mcp",
   "display_name": "BricsCAD",
-  "version": "0.1.0",
-  "description": "Read, audit and edit drawings in BricsCAD through a LISP listener.",
-  "long_description": "Starts its own BricsCAD window and controls it through a small LISP listener, so it works at every licence level, including Lite, and doesn't need Windows COM. Reads and audits drawings, draws and edits entities, and runs LISP for anything else.\n\nSelf-contained: the bundle carries its own Python and every dependency, so there is nothing to install first. BricsCAD must be installed.\n\n**Updating:** install the newest `.mcpb` for your platform from the [releases page](https://github.com/alesdev88/bricscad-mcp/releases) over this one.",
+  "version": "0.2.0",
+  "description": "Read, audit, edit, plot and batch-process drawings in BricsCAD through a LISP listener.",
+  "long_description": "Starts its own BricsCAD window and controls it through a small LISP listener, so it works at every licence level, including Lite, and doesn't need Windows COM. Reads and audits drawings, draws and edits entities, exports DXF, plots PDF, returns preview images, runs jobs across many drawings, and runs LISP for anything else.\n\nSelf-contained: the bundle carries its own Python and every dependency, so there is nothing to install first. BricsCAD must be installed.\n\n**Updating:** install the newest `.mcpb` for your platform from the [releases page](https://github.com/alesdev88/bricscad-mcp/releases) over this one.",
   "author": {
     "name": "Aleš Dolenec",
     "url": "https://github.com/alesdev88"
