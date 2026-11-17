@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from bricscad_mcp.bridge import Bridge
-from bricscad_mcp.errors import BridgeTimeout, LispError, ProcessDied
+from bricscad_mcp.errors import BricsCADError, BridgeTimeout, LispError, ProcessDied
 from fake_listener import FakeListener
 
 
@@ -114,6 +114,28 @@ def test_reply_in_the_lisp_code_page_is_decoded(queue):
     b.reply_encoding = "cp1250"
     with FakeListener(queue, lambda e: {"ok": True, "result": e}, encoding="cp1250"):
         assert b.send("Načrt čšž") == "Načrt čšž"
+
+
+def test_text_outside_the_lisp_code_page_is_refused_before_sending(queue):
+    # LISP on Windows would turn these into "?" without an error.
+    b = Bridge(queue)
+    b.reply_encoding = "cp1250"
+    with FakeListener(queue, lambda e: {"ok": True, "result": e}, encoding="cp1250") as fake:
+        with pytest.raises(BricsCADError, match="cp1250") as refused:
+            b.send('(mcp:text "Načrt 中文 中")')
+        assert fake.requests == []
+    message = str(refused.value)
+    assert "U+4E2D" in message and "U+6587" in message
+    assert message.count("U+4E2D") == 1
+    assert "č" not in message
+    assert list(queue.glob("*.lsp")) == []
+
+
+def test_a_lone_surrogate_is_refused_before_sending(queue):
+    with FakeListener(queue, lambda e: {"ok": True, "result": e}) as fake:
+        with pytest.raises(BricsCADError, match="U\\+D800"):
+            Bridge(queue).send('"a\ud800"')
+        assert fake.requests == []
 
 
 def test_a_locked_reply_is_read_once_it_is_released(queue, monkeypatch):
