@@ -27,6 +27,7 @@ async def test_the_installed_command_serves_every_tool():
         "bricscad_audit_report",
         "bricscad_undo", "bricscad_erase_entities", "bricscad_set_layer", "bricscad_modify_entities", "bricscad_set_attributes", "bricscad_create_entities", "bricscad_save_drawing",
         "bricscad_export_dxf", "bricscad_plot_pdf", "bricscad_preview_image",
+        "bricscad_batch_run",
     }
 
 
